@@ -8,23 +8,42 @@ const groups = [
 let key = '';
 try { key = localStorage.getItem('cap-key') || ''; } catch (_) {}
 const hash = new URLSearchParams(location.hash.slice(1));
-if (hash.get('key')) { key = hash.get('key'); saveKey(); }
+if (hash.get('key')) { key = hash.get('key').trim(); saveKey(); }
+const validKey = value => /^[A-Za-z0-9_-]{4,128}$/.test(value);
+if (key && !validKey(key)) { key=''; saveKey(); }
 let state = {connected:false}, busy = false, reachable = false, polling = false, revision = 0;
 function saveKey() { try { localStorage.setItem('cap-key',key); } catch (_) {} }
 function feedback(message, error=false) { $('feedback').textContent=message; $('feedback').classList.toggle('error',error); }
+function setupError(message) {
+  $('setup').open=true;
+  feedback(message,true);
+}
+function describeError(error) {
+  if(error.name==='AbortError') return 'The bridge did not reply. Keep it running on the computer, check Wi-Fi, then tap Retry bridge connection.';
+  if(error.name==='SyntaxError'||error.name==='TypeError') return 'The browser could not reach the bridge. Open the full Phone link from the running bridge, or paste it below and tap Update.';
+  return error.message || 'Connection failed. Update the bridge link below and retry.';
+}
 async function api(path, body) {
+  if(location.protocol!=='http:' && location.protocol!=='https:')
+    throw new Error('This page was opened as a file. Paste the full http:// Phone link printed by the bridge below, then tap Update.');
+  if(!validKey(key)) throw new Error('Paste the latest full Phone link from the running bridge, then tap Update.');
   const abort = new AbortController();
   const timer = setTimeout(()=>abort.abort(), path==='/api/connect'?16000:9000);
   try {
-    const response = await fetch(path, {method:body===undefined?'GET':'POST', headers:{'X-Cap-Key':key,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:abort.signal,cache:'no-store'});
-    const data=await response.json();
-    if(!response.ok) {
-      if(response.status===401) $('pairing').hidden=false;
-      throw new Error(data.error || `Bridge returned ${response.status}`);
-    }
+    const response = await fetch(new URL(path,location.href).href, {method:body===undefined?'GET':'POST', headers:{'X-Cap-Key':key,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:abort.signal,cache:'no-store'});
+    // Check the reply before parsing so wrong hosts and 404 pages produce
+    // useful guidance rather than an opaque browser parsing error.
+    const contentType=(response.headers.get('Content-Type')||'').toLowerCase();
+    if(!contentType.includes('application/json'))
+      throw new Error('This address is serving a web page, not the running bridge. Paste the full Phone link printed by the bridge below and tap Update. GitHub Pages cannot run the USB bridge.');
+    let data;
+    try { data=await response.json(); }
+    catch(_) { throw new Error('The bridge returned an unreadable response. Restart the bridge and update this page with its new Phone link.'); }
+    if(!response.ok) throw new Error(data.error || `Bridge returned ${response.status}`);
     reachable=true; return data;
   } finally { clearTimeout(timer); }
 }
+
 function render() {
   const connected=reachable && state.connected;
   $('connectionBadge').textContent=connected?'Cap connected':(!reachable?'Bridge unavailable':state.port_open?'Waiting for cap reply':'USB disconnected');
@@ -38,7 +57,9 @@ function render() {
   $('connect').disabled=busy||!reachable||!$('ports').value;
   $('disconnect').disabled=busy||!reachable||!state.port_open;
   $('refresh').disabled=busy||!key;
-  $('pairing').hidden=!!key && $('pairing').hidden;
+  $('pair').disabled=busy;
+  $('retry').disabled=busy;
+  $('pairKey').disabled=busy;
 }
 for(const [title,scenes] of groups) {
   const heading=document.createElement('h3');heading.className='group-title';heading.textContent=title;
@@ -60,9 +81,9 @@ async function refreshPorts() {
   render();
 }
 async function poll() {
-  if(polling||busy||!key)return;polling=true;const started=revision;
+  if(polling||busy||!key||!reachable)return;polling=true;const started=revision;
   try { const result=await api('/api/status'); if(started===revision){state=result;if(state.error) feedback(state.error,true);} }
-  catch(e) { reachable=false;feedback(e.name==='AbortError'?'Bridge is not responding. Check the computer.':e.message,true); }
+  catch(e) { if(started===revision){reachable=false;setupError(describeError(e));} }
   finally { polling=false;render(); }
 }
 async function action(path,body,message) {
@@ -72,21 +93,46 @@ async function action(path,body,message) {
     state=result.state||result;
     feedback(message);
     if(path==='/api/connect')$('setup').open=false;
-  } catch(e) {feedback(e.name==='AbortError'?'No reply from bridge. Check the cap before retrying.':e.message,true);}
+  } catch(e) {setupError(describeError(e));}
   finally {busy=false;render();poll();}
 }
 $('ports').addEventListener('change',render);
 $('connect').onclick=()=>action('/api/connect',{port:$('ports').value},'USB connected — the cap replied. Choose an animation.');
 $('disconnect').onclick=()=>action('/api/disconnect',{},'USB disconnected. The cap continues its current mode.');
-$('refresh').onclick=()=>refreshPorts().catch(e=>feedback(e.message,true));
+$('refresh').onclick=()=>init();
+$('retry').onclick=()=>init();
 $('ping').onclick=()=>action('/api/ping',{},'Connection test passed — the Due replied through USB.');
 $('off').onclick=()=>action('/api/off',{},'LEDs off — cap confirmed.');
 for(const b of document.querySelectorAll('[data-mode]'))b.onclick=()=>action('/api/mode',{mode:b.dataset.mode},`${b.dataset.mode==='DEMO'?'Demo':'Ceremony'} playlist started — cap confirmed.`);
+function pairingTarget(value) {
+  value=value.trim();
+  if(!value) throw new Error('Paste the full Phone link or the pairing key before tapping Update.');
+  if(validKey(value)) return {key:value};
+  let url;
+  try { url=new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value)?value:'http://'+value); }
+  catch(_) { throw new Error('That bridge link is incomplete. Copy the entire Phone link, including http://, port number, and #key=.'); }
+  if(url.protocol!=='http:'||!url.hostname||url.username||url.password||!url.port)
+    throw new Error('Use the full http:// Phone link printed by bridge.py, including its port number (usually :8765).');
+  const nextKey=new URLSearchParams(url.hash.slice(1)).get('key');
+  if(!nextKey||!validKey(nextKey)) throw new Error('The bridge link needs its pairing key. Copy the entire Phone link, including #key= and everything after it.');
+  if(location.hostname!==url.hostname && ['localhost','127.0.0.1','0.0.0.0'].includes(url.hostname))
+    throw new Error('Use the Phone link with the computer’s Wi-Fi IP address, not localhost or 127.0.0.1.');
+  return {key:nextKey,url:url.origin+'/#key='+encodeURIComponent(nextKey),origin:url.origin};
+}
 $('pair').onclick=async()=>{
-  const value=$('pairKey').value.trim();
-  try {key=new URLSearchParams(new URL(value).hash.slice(1)).get('key')||value;} catch(_){key=value;}
-  saveKey();$('pairing').hidden=true;await init();
+  if(busy)return;
+  try {
+    const target=pairingTarget($('pairKey').value);
+    // Navigate to the local bridge rather than trying cross-origin USB commands.
+    if(target.url && (target.origin!==location.origin || location.pathname!=='/')) {
+      location.assign(target.url);return;
+    }
+    key=target.key;saveKey();revision++;
+    try { history.replaceState(null,'',location.pathname+'#key='+encodeURIComponent(key)); } catch(_) {}
+    await init();
+  } catch(e) {setupError(describeError(e));render();}
 };
+$('pairKey').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();$('pair').click();}});
 $('copyLink').onclick=async()=>{
   if(!key){feedback('Use the complete pairing link printed by the bridge.',true);return;}
   let link=`${location.origin}/#key=${encodeURIComponent(key)}`;
@@ -100,10 +146,13 @@ $('copyLink').onclick=async()=>{
   } catch(_) {window.prompt('Copy this pairing link. On iPhone use the Wi-Fi IP instead of localhost.',link);}
 };
 async function init() {
-  if(!key){$('pairing').hidden=false;feedback('Open the complete pairing link printed by the bridge.',true);render();return;}
+  if(busy)return;
+  if(!key){setupError('Paste the latest full Phone link printed by the running bridge, then tap Update.');render();return;}
+  busy=true;revision++;render();
   try {state=await api('/api/status');await refreshPorts();feedback(state.connected?'The cap is connected. Pick a scene.':'Choose the Due’s USB port, then tap Connect cap.');}
-  catch(e){reachable=false;feedback(e.message,true);}
-  render();
+  catch(e){reachable=false;setupError(describeError(e));}
+  finally {busy=false;render();}
 }
+$('pairKey').value=key;
 init();setInterval(poll,2000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});

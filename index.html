@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="style.css?v=2">
+  <script src="app.js?v=2" defer></script>
 </head>
 <body>
 <main>
@@ -23,7 +23,7 @@
       <summary>USB connection <span>Setup & pairing</span></summary>
       <div class="setup-body">
         <p>Plug the Due into the computer’s USB port. Use the <strong>Programming</strong> port on the Due and close Arduino Serial Monitor.</p>
-        <div id="pairing" hidden><label for="pairKey">Pairing link or key</label><div class="input-row"><input id="pairKey" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Paste the full link from the bridge"><button id="pair" class="secondary">Pair</button></div></div>
+        <div id="pairing"><label for="pairKey">Bridge link or pairing key</label><div class="input-row"><input id="pairKey" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Paste the latest full Phone link"><button id="pair" class="secondary">Update</button></div><p class="hint">You can edit this at any time. Use the full Phone link printed by the running bridge.</p><button id="retry" class="text-button">Retry bridge connection ↻</button></div>
         <label for="ports">Computer’s USB port</label>
         <div class="input-row"><select id="ports"><option value="">Looking for ports…</option></select><button id="refresh" class="secondary" aria-label="Refresh USB ports">↻</button></div>
         <div class="setup-actions"><button id="connect" class="primary">Connect cap</button><button id="disconnect" class="secondary" disabled>Disconnect USB</button></div>
