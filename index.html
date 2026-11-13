@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css?v=2">
-  <script src="app.js?v=2" defer></script>
+  <link rel="stylesheet" href="style.css?v=3">
+  <script src="app.js?v=3" defer></script>
 </head>
 <body>
 <main>
@@ -32,6 +32,29 @@
       </div>
     </details>
   </section>
+  <section class="creative" aria-label="Touch drawing">
+    <div class="section-title"><h2>Draw on your cap</h2><span>TOUCH CANVAS</span></div>
+    <p class="section-note">Draw with your finger. Tap Show drawing to put it on the cap; new strokes then send live.</p>
+    <canvas id="drawCanvas" width="480" height="480" aria-label="24 by 24 pixel drawing canvas"></canvas>
+    <div class="drawing-tools">
+      <label class="color-label">Color <input id="brushColor" type="color" value="#65d96d"></label>
+      <button id="eraser" class="secondary" aria-pressed="false">Eraser</button>
+      <button id="clearDrawing" class="secondary">Clear</button>
+      <label class="live-label"><input id="liveDrawing" type="checkbox" checked> Live</label>
+    </div>
+    <button id="showDrawing" class="primary" data-control disabled>Show drawing on cap</button>
+    <p id="drawingStatus" class="hint" role="status">You can sketch before connecting.</p>
+  </section>
+  <section aria-label="Playable games">
+    <div class="section-title"><h2>Your turn</h2><span>PLAY ON THE CAP</span></div>
+    <div class="game-buttons"><button data-game="6" data-control disabled>Pong</button><button data-game="3" data-control disabled>Breakout</button><button data-game="13" data-control disabled>Snake</button></div>
+    <p id="gameHelp" class="section-note">Choose a game to play. Animation buttons below run their automatic versions.</p>
+    <label for="paddle">Move your paddle</label><input id="paddle" class="paddle-slider" type="range" min="0" max="23" value="12" disabled>
+    <div id="snakePad" class="snake-pad" aria-label="Snake swipe area">
+      <button data-direction="UP" disabled aria-label="Snake up">↑</button>
+      <div><button data-direction="LEFT" disabled aria-label="Snake left">←</button><button data-direction="DOWN" disabled aria-label="Snake down">↓</button><button data-direction="RIGHT" disabled aria-label="Snake right">→</button></div>
+    </div>
+  </section>
   <section class="playlist" aria-label="Playback controls">
     <div class="section-title"><h2>Let it play</h2><span>AUTO PLAYLIST</span></div>
     <div class="mode-buttons"><button data-mode="DEMO" data-control disabled><strong>Demo</strong><span>20 seconds per scene</span></button><button data-mode="CEREMONY" data-control disabled><strong>Ceremony</strong><span>Shuffled · 3–4 minutes</span></button></div>
@@ -43,5 +66,6 @@
   </section>
   <footer><button id="off" class="off-button" data-control disabled>Turn LEDs off</button><p>Made for a moment worth celebrating.</p></footer>
 </main>
+<script src="creative.js?v=3" defer></script>
 </body>
 </html>

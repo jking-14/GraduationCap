@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const groups = [
-  ['NATURE & NIGHT', [[19,'Growing Plant','♧'],[20,'Beach','≈'],[21,'Moonlit Campfire','☾'],[22,'Underwater','⋈'],[23,'Night City','▥'],[18,'Rain and Lightning','ϟ'],[2,'Pond Ripples','◎']]],
+  ['NATURE & NIGHT', [[19,'Growing Plant','♧'],[20,'Beach','≈'],[21,'Moonlit Campfire','☾'],[22,'Underwater','⋈'],[23,'Spiral / Fractal','✺'],[18,'Rain and Lightning','ϟ'],[2,'Pond Ripples','◎']]],
   ['RETRO GAMES', [[1,'Tron','⌁'],[3,'Breakout','▤'],[6,'Pong','Ⅱ'],[11,'Tetris','▙'],[12,'Pac-Man','◔'],[13,'Snake','⌇'],[14,'Space Invaders','⋀'],[16,'Platformer','▟']]],
   ['LIGHT & MOTION', [[0,'Matrix Rain','⋮'],[4,'Rotating Cube','◇'],[5,'Loading Bar','▰'],[7,'DVD','▱'],[8,'Starfield','✧'],[9,'Lava Lamp','◒'],[10,'Sine Waves','∿'],[15,'Fireworks','✳'],[17,'Game of Life','⁙']]]
 ];
@@ -11,6 +11,8 @@ const hash = new URLSearchParams(location.hash.slice(1));
 if (hash.get('key')) { key = hash.get('key').trim(); saveKey(); }
 const validKey = value => /^[A-Za-z0-9_-]{4,128}$/.test(value);
 if (key && !validKey(key)) { key=''; saveKey(); }
+let ioTail=Promise.resolve();
+function requestSerial(path,body){const job=ioTail.then(()=>api(path,body));ioTail=job.catch(()=>{});return job;}
 let state = {connected:false}, busy = false, reachable = false, polling = false, revision = 0;
 function saveKey() { try { localStorage.setItem('cap-key',key); } catch (_) {} }
 function feedback(message, error=false) { $('feedback').textContent=message; $('feedback').classList.toggle('error',error); }
@@ -49,8 +51,8 @@ function render() {
   $('connectionBadge').textContent=connected?'Cap connected':(!reachable?'Bridge unavailable':state.port_open?'Waiting for cap reply':'USB disconnected');
   $('connectionBadge').prepend(document.createElement('i'));
   $('connectionBadge').classList.toggle('connected',connected);
-  $('nowPlaying').textContent=connected?(state.mode==='OFF'?'LEDs off':state.animation_name||'Starting playlist…'):'Connect your cap';
-  $('modeLabel').textContent=connected?`${({DEMO:'Demo playlist',CEREMONY:'Ceremony playlist',MANUAL:'Selected scene',OFF:'Playback stopped'})[state.mode]||'Ready'} · ${state.port}`:'USB → computer → this phone';
+  $('nowPlaying').textContent=connected?(state.mode==='OFF'?'LEDs off':state.mode==='DRAW'?'Your drawing':state.animation_name||'Starting playlist…'):'Connect your cap';
+  $('modeLabel').textContent=connected?`${({DEMO:'Demo playlist',CEREMONY:'Ceremony playlist',MANUAL:'Selected scene',OFF:'Playback stopped',DRAW:'Touch drawing',GAME:'You are playing'})[state.mode]||'Ready'} · ${state.port}`:'USB → computer → this phone';
   document.querySelectorAll('[data-control]').forEach(b=>b.disabled=!connected||busy);
   document.querySelectorAll('[data-scene]').forEach(b=>b.classList.toggle('active',connected&&state.animation===Number(b.dataset.scene)));
   document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',connected&&state.mode===b.dataset.mode));
@@ -60,6 +62,7 @@ function render() {
   $('pair').disabled=busy;
   $('retry').disabled=busy;
   $('pairKey').disabled=busy;
+  if(typeof renderCreative==='function')renderCreative();
 }
 for(const [title,scenes] of groups) {
   const heading=document.createElement('h3');heading.className='group-title';heading.textContent=title;
@@ -89,7 +92,7 @@ async function poll() {
 async function action(path,body,message) {
   if(busy)return;busy=true;revision++;render();feedback(path==='/api/connect'?'Opening USB and waiting for the cap to reply…':'Sending command…');
   try {
-    const result=await api(path,body);
+    const result=await requestSerial(path,body);
     state=result.state||result;
     feedback(message);
     if(path==='/api/connect')$('setup').open=false;

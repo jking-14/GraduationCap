@@ -4,6 +4,7 @@ import argparse
 import hmac
 import json
 import secrets
+import re
 import socket
 import threading
 import time
@@ -14,7 +15,7 @@ from pathlib import Path
 ANIMATIONS = ["Matrix Rain", "Tron", "Pond Ripples", "Breakout", "Rotating Cube",
     "Loading Bar", "Pong", "DVD", "Starfield", "Lava Lamp", "Sine Waves", "Tetris",
     "Pac-Man", "Snake", "Space Invaders", "Fireworks", "Platformer", "Game of Life",
-    "Rain and Lightning", "Growing Plant", "Beach", "Moonlit Campfire", "Underwater", "Night City"]
+    "Rain and Lightning", "Growing Plant", "Beach", "Moonlit Campfire", "Underwater", "Spiral / Fractal"]
 WEB = Path(__file__).resolve().parent / "web"
 
 
@@ -34,6 +35,7 @@ class CapBridge:
         self.lock = threading.RLock()
         self.command_lock = threading.Lock()
         self.lifecycle = threading.Lock()
+        self.activity_lock = threading.RLock()
         self.serial = None
         self.generation = 0
         self.pending = {}
@@ -102,7 +104,7 @@ class CapBridge:
                 while time.monotonic() < deadline:
                     try:
                         response = self.command("PING", timeout=0.8, require_ready=False)
-                        if response != "PONG CAP/1":
+                        if response != "PONG CAP/2":
                             raise RuntimeError("Different firmware: upload the included gradCap2026 sketch.")
                         with self.lock:
                             self.ready = True
@@ -124,7 +126,7 @@ class CapBridge:
                 with self.lock:
                     if generation != self.generation or device is not self.serial:
                         return
-                chunk = device.read(256)
+                chunk = device.read(min(256, max(1, getattr(device, "in_waiting", 0))))
                 if not chunk:
                     continue
                 buffer += chunk
@@ -142,7 +144,7 @@ class CapBridge:
             if generation != self.generation:
                 return
             parts = line.split()
-            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF"}:
+            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME"}:
                 try:
                     animation = int(parts[2])
                 except ValueError:
@@ -172,7 +174,7 @@ class CapBridge:
             self._disconnect()
 
     def command(self, verb, argument=None, timeout=3, require_ready=True):
-        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF"}:
+        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT"}:
             raise ValueError("Unknown command")
         with self.command_lock:
             with self.lock:
@@ -210,7 +212,7 @@ class CapBridge:
                 if generation != self.generation or not self.ready:
                     return
             try:
-                if self.command("PING") != "PONG CAP/1":
+                if self.command("PING") != "PONG CAP/2":
                     raise RuntimeError("Unexpected firmware response")
             except (RuntimeError, TimeoutError) as exc:
                 self._fail(generation, str(exc))
@@ -278,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/":
             self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8"); return
-        if path in {"/app.js", "/style.css"}:
+        if path in {"/app.js", "/creative.js", "/style.css"}:
             self.send(200, (WEB / path[1:]).read_bytes(), "text/javascript; charset=utf-8" if path.endswith("js") else "text/css; charset=utf-8"); return
         if not self.authenticated():
             self.send(401, {"error": "Pair this phone using the complete link printed by the bridge."}); return
@@ -298,6 +300,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send(503, {"error": str(exc)})
 
     def do_POST(self):
+        with self.server.bridge.activity_lock:
+            self.handle_post()
+
+    def handle_post(self):
         if not self.allowed():
             self.send(403, {"error": "Cross-origin commands are disabled. Open the local bridge page."}); return
         if not self.authenticated():
@@ -306,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise ValueError("Expected JSON")
             size = int(self.headers.get("Content-Length", "0"))
-            if not 0 < size <= 1024:
+            if not 0 < size <= 8192:
                 raise ValueError("Invalid request size")
             self.connection.settimeout(5)
             data = json.loads(self.rfile.read(size))
@@ -326,6 +332,54 @@ class Handler(BaseHTTPRequestHandler):
                 if type(animation) is not int or not 0 <= animation < len(ANIMATIONS):
                     raise ValueError("Invalid animation")
                 reply = bridge.command("PLAY", animation)
+            elif path == "/api/game":
+                game = data.get("id")
+                if type(game) is not int or game not in {3, 6, 13}:
+                    raise ValueError("Playable games: Pong, Breakout, Snake")
+                reply = bridge.command("GAME", game)
+            elif path == "/api/input":
+                if "paddle" in data and "direction" not in data:
+                    position = data["paddle"]
+                    if type(position) is not int or not 0 <= position <= 23:
+                        raise ValueError("Paddle must be between 0 and 23")
+                    reply = bridge.command("INPUT", f"P{position}")
+                elif "direction" in data and "paddle" not in data:
+                    direction = data["direction"]
+                    if not isinstance(direction,str) or direction not in {"UP","DOWN","LEFT","RIGHT"}:
+                        raise ValueError("Invalid direction")
+                    reply = bridge.command("INPUT", direction)
+                else:
+                    raise ValueError("Send a paddle position or a direction")
+            elif path == "/api/draw/start":
+                reply = bridge.command("DRAW")
+            elif path == "/api/draw/clear":
+                if bridge.status()["mode"] != "DRAW":
+                    bridge.command("DRAW")
+                reply = bridge.command("CLEAR")
+            elif path == "/api/draw/frame":
+                pixels = data.get("pixels")
+                if not isinstance(pixels,str) or not re.fullmatch(r"[0-9a-fA-F]{3456}",pixels):
+                    raise ValueError("A drawing needs exactly 576 RGB pixels")
+                if bridge.status()["mode"] != "DRAW":
+                    bridge.command("DRAW")
+                for row in range(24):
+                    bridge.command("ROW",f"{row},{pixels[row*144:(row+1)*144]}")
+                reply = bridge.command("SHOW")
+            elif path == "/api/draw/stroke":
+                pixels = data.get("pixels")
+                if not isinstance(pixels,list) or not 1 <= len(pixels) <= 32:
+                    raise ValueError("Send between 1 and 32 pixels")
+                commands=[]
+                for pixel in pixels:
+                    if not isinstance(pixel,dict):
+                        raise ValueError("Invalid pixel")
+                    x,y,color=pixel.get("x"),pixel.get("y"),pixel.get("color")
+                    if type(x) is not int or type(y) is not int or not 0 <= x < 24 or not 0 <= y < 24 or not isinstance(color,str) or not re.fullmatch(r"[0-9a-fA-F]{6}",color):
+                        raise ValueError("Invalid pixel coordinate or color")
+                    commands.append(f"{x},{y},{color}")
+                for pixel in commands:
+                    bridge.command("PIX",pixel)
+                reply = bridge.command("SHOW")
             elif path == "/api/mode":
                 mode = data.get("mode")
                 if not isinstance(mode, str) or mode not in {"DEMO", "CEREMONY"}:
@@ -338,7 +392,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send(404, {"error": "Not found"}); return
             # Ask for state after an applied command; this orders state before HTTP reply.
-            bridge.command("STATUS")
+            if path not in {"/api/input", "/api/draw/stroke"}:
+                bridge.command("STATUS")
             self.send(200, {"ack": reply, "state": bridge.status()})
         except (ValueError, json.JSONDecodeError) as exc:
             self.send(400, {"error": str(exc)})
