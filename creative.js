@@ -1,7 +1,7 @@
 'use strict';
 const canvas=$('drawCanvas'), ctx=canvas.getContext('2d');
 let pixels=Array(576).fill('000000'), erase=false, lastPoint=null, pointer=null;
-let strokes=new Map(), strokeBusy=false, desiredInput=null, inputBusy=false;
+let strokes=new Map(), strokeBusy=false, desiredInput=null, inputBusy=false, inputEvents=[];
 try{const saved=localStorage.getItem('cap-drawing');if(/^[0-9a-f]{3456}$/i.test(saved||''))pixels=saved.match(/.{6}/g);}catch(_){}
 function drawPreview(){
   ctx.fillStyle='#060b09';ctx.fillRect(0,0,480,480);
@@ -11,12 +11,23 @@ function saveDrawing(){try{localStorage.setItem('cap-drawing',pixels.join(''));}
 function renderCreative(){
   const playing=reachable&&state.connected&&!busy&&state.mode==='GAME';
   $('clearDrawing').disabled=busy;
-  $('paddle').disabled=!playing||![3,6].includes(state.animation);
-  document.querySelectorAll('[data-direction]').forEach(b=>b.disabled=!playing||state.animation!==13);
+  $('paddle').disabled=!playing||![3,6,14].includes(state.animation);
+  document.querySelectorAll('[data-direction]').forEach(b=>b.disabled=!playing||![12,13].includes(state.animation));
   document.querySelectorAll('[data-game]').forEach(b=>b.classList.toggle('active',playing&&Number(b.dataset.game)===state.animation));
-  $('gameHelp').textContent=playing?(state.animation===13?'Use the arrows or swipe this pad. Walls and your own tail end the round; a new round starts automatically.':state.animation===6?'You control the red paddle. The blue paddle is the computer. Move the slider while watching the cap.':'Move the slider to keep the ball in play. Watch the cap; a new round starts after your lives run out.'):'Choose a game to play. Animation buttons below run their automatic versions.';
+  const help={
+    3:'Move the slider to keep the ball in play. Breakout’s paddle direction is now inverted.',
+    6:'You control the red paddle against the blue computer paddle. Move the slider while watching the cap.',
+    12:'Use arrows or swipe to steer Pac-Man. Turns are buffered until a passage opens; walls stop you. Avoid ghosts and collect pellets.',
+    13:'Use arrows or swipe. Top and bottom are swapped from the previous version; left and right are unchanged. Avoid walls and your body.',
+    14:'Move your ship with the slider and tap Fire to shoot. Clear the aliens and dodge their shots.',
+    16:'The scene scrolls automatically. Tap Jump to clear gaps, platforms and enemies. New runs start after a fall.'
+  };
+  $('gameHelp').textContent=playing?help[state.animation]:'Choose a game to play. Animation buttons below run their automatic versions.';
+  $('paddleLabel').textContent=state.animation===14?'Move your ship':'Move your paddle';
+  $('gameAction').disabled=!playing||![14,16].includes(state.animation);
+  $('gameAction').textContent=state.animation===14?'Fire':state.animation===16?'Jump':'Jump / Fire';
   if(state.mode!=='DRAW'){strokes.clear();}
-  if(!playing)desiredInput=null;
+  if(!playing){desiredInput=null;inputEvents=[];}
 }
 function position(event){const r=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(23,Math.floor((event.clientX-r.left)*24/r.width))),y:Math.max(0,Math.min(23,Math.floor((event.clientY-r.top)*24/r.height)))};}
 function paint(x,y){const color=erase?'000000':$('brushColor').value.slice(1);pixels[y*24+x]=color;strokes.set(y*24+x,{x,y,color});}
@@ -43,22 +54,25 @@ async function flushStroke(){
   finally{strokeBusy=false;}
 }
 setInterval(flushStroke,120);
-for(const b of document.querySelectorAll('[data-game]'))b.onclick=()=>{desiredInput=null;return action('/api/game',{id:Number(b.dataset.game)},`${b.textContent} is ready — you are playing.`);};
+for(const b of document.querySelectorAll('[data-game]'))b.onclick=()=>{desiredInput=null;inputEvents=[];$('paddle').value='12';return action('/api/game',{id:Number(b.dataset.game)},`${b.textContent} is ready — you are playing.`);};
 async function sendInput(value){
   if(busy||!reachable||!state.connected||state.mode!=='GAME')return;
-  if(value.direction&&state.animation!==13)return;
-  if(value.paddle!==undefined&&![3,6].includes(state.animation))return;
-  desiredInput=value;if(inputBusy)return;inputBusy=true;const session=revision;
-  try{while(desiredInput&&session===revision&&!busy&&state.mode==='GAME'){
-    const next=desiredInput;desiredInput=null;await requestSerial('/api/input',next);
-  }}catch(e){desiredInput=null;if(session===revision)setupError(describeError(e));}
+  if(value.direction&&![12,13].includes(state.animation))return;
+  if(value.paddle!==undefined&&![3,6,14].includes(state.animation))return;
+  if(value.action){if(![14,16].includes(state.animation))return;if(inputEvents.length<8)inputEvents.push(value);}
+  else desiredInput=value;
+  if(inputBusy)return;inputBusy=true;const session=revision;
+  try{while((desiredInput||inputEvents.length)&&session===revision&&!busy&&state.mode==='GAME'){
+    const next=desiredInput||inputEvents.shift();if(next===desiredInput)desiredInput=null;await requestSerial('/api/input',next);
+  }}catch(e){desiredInput=null;inputEvents=[];if(session===revision)setupError(describeError(e));}
   finally{inputBusy=false;}
 }
 let sliderTimer=null;
 $('paddle').addEventListener('input',()=>{if(sliderTimer)return;sliderTimer=setTimeout(()=>{sliderTimer=null;sendInput({paddle:Number($('paddle').value)});},65);});
+$('gameAction').onclick=()=>sendInput({action:state.animation===14?'FIRE':'JUMP'});
 for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>sendInput({direction:b.dataset.direction});
 let swipe=null;
-$('snakePad').addEventListener('pointerdown',e=>{if(state.mode==='GAME'&&state.animation===13)swipe={x:e.clientX,y:e.clientY};});
+$('snakePad').addEventListener('pointerdown',e=>{if(state.mode==='GAME'&&[12,13].includes(state.animation))swipe={x:e.clientX,y:e.clientY};});
 $('snakePad').addEventListener('pointerup',e=>{if(!swipe)return;const dx=e.clientX-swipe.x,dy=e.clientY-swipe.y;swipe=null;if(Math.max(Math.abs(dx),Math.abs(dy))<18)return;sendInput({direction:Math.abs(dx)>Math.abs(dy)?dx>0?'RIGHT':'LEFT':dy>0?'DOWN':'UP'});});
 $('snakePad').addEventListener('pointercancel',()=>{swipe=null;});
 drawPreview();renderCreative();

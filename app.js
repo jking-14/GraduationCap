@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const groups = [
-  ['NATURE & NIGHT', [[19,'Growing Plant','♧'],[20,'Beach','≈'],[21,'Moonlit Campfire','☾'],[22,'Underwater','⋈'],[23,'Spiral / Fractal','✺'],[18,'Rain and Lightning','ϟ'],[2,'Pond Ripples','◎']]],
+  ['NATURE & NIGHT', [[19,'Growing Plant','♧'],[20,'Beach','≈'],[21,'Moonlit Campfire','☾'],[22,'Underwater','⋈'],[23,'Spiral','✺'],[24,'Fractal','❖'],[18,'Rain and Lightning','ϟ'],[2,'Pond Ripples','◎']]],
   ['RETRO GAMES', [[1,'Tron','⌁'],[3,'Breakout','▤'],[6,'Pong','Ⅱ'],[11,'Tetris','▙'],[12,'Pac-Man','◔'],[13,'Snake','⌇'],[14,'Space Invaders','⋀'],[16,'Platformer','▟']]],
   ['LIGHT & MOTION', [[0,'Matrix Rain','⋮'],[4,'Rotating Cube','◇'],[5,'Loading Bar','▰'],[7,'DVD','▱'],[8,'Starfield','✧'],[9,'Lava Lamp','◒'],[10,'Sine Waves','∿'],[15,'Fireworks','✳'],[17,'Game of Life','⁙']]]
 ];

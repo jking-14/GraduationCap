@@ -15,7 +15,7 @@ from pathlib import Path
 ANIMATIONS = ["Matrix Rain", "Tron", "Pond Ripples", "Breakout", "Rotating Cube",
     "Loading Bar", "Pong", "DVD", "Starfield", "Lava Lamp", "Sine Waves", "Tetris",
     "Pac-Man", "Snake", "Space Invaders", "Fireworks", "Platformer", "Game of Life",
-    "Rain and Lightning", "Growing Plant", "Beach", "Moonlit Campfire", "Underwater", "Spiral / Fractal"]
+    "Rain and Lightning", "Growing Plant", "Beach", "Moonlit Campfire", "Underwater", "Spiral", "Fractal"]
 WEB = Path(__file__).resolve().parent / "web"
 
 
@@ -104,7 +104,7 @@ class CapBridge:
                 while time.monotonic() < deadline:
                     try:
                         response = self.command("PING", timeout=0.8, require_ready=False)
-                        if response != "PONG CAP/2":
+                        if response != "PONG CAP/3":
                             raise RuntimeError("Different firmware: upload the included gradCap2026 sketch.")
                         with self.lock:
                             self.ready = True
@@ -212,7 +212,7 @@ class CapBridge:
                 if generation != self.generation or not self.ready:
                     return
             try:
-                if self.command("PING") != "PONG CAP/2":
+                if self.command("PING") != "PONG CAP/3":
                     raise RuntimeError("Unexpected firmware response")
             except (RuntimeError, TimeoutError) as exc:
                 self._fail(generation, str(exc))
@@ -334,19 +334,36 @@ class Handler(BaseHTTPRequestHandler):
                 reply = bridge.command("PLAY", animation)
             elif path == "/api/game":
                 game = data.get("id")
-                if type(game) is not int or game not in {3, 6, 13}:
-                    raise ValueError("Playable games: Pong, Breakout, Snake")
+                if type(game) is not int or game not in {3, 6, 12, 13, 14, 16}:
+                    raise ValueError("Playable games: Pong, Breakout, Pac-Man, Snake, Space Invaders, Platformer")
                 reply = bridge.command("GAME", game)
             elif path == "/api/input":
-                if "paddle" in data and "direction" not in data:
+                current=bridge.status()
+                if current["mode"] != "GAME":
+                    raise ValueError("Start a playable game first")
+                game=current["animation"]
+                if len({"paddle","direction","action"}.intersection(data)) != 1:
+                    raise ValueError("Send exactly one game control")
+                if "action" in data:
+                    action = data["action"]
+                    if not isinstance(action,str) or action not in {"JUMP","FIRE"}:
+                        raise ValueError("Invalid game action")
+                    if (game,action) not in {(14,"FIRE"),(16,"JUMP")}:
+                        raise ValueError("That action is not available in this game")
+                    reply = bridge.command("INPUT",action)
+                elif "paddle" in data and "direction" not in data:
                     position = data["paddle"]
                     if type(position) is not int or not 0 <= position <= 23:
                         raise ValueError("Paddle must be between 0 and 23")
+                    if game not in {3,6,14}:
+                        raise ValueError("This game does not use the slider")
                     reply = bridge.command("INPUT", f"P{position}")
                 elif "direction" in data and "paddle" not in data:
                     direction = data["direction"]
                     if not isinstance(direction,str) or direction not in {"UP","DOWN","LEFT","RIGHT"}:
                         raise ValueError("Invalid direction")
+                    if game not in {12,13}:
+                        raise ValueError("This game does not use directional controls")
                     reply = bridge.command("INPUT", direction)
                 else:
                     raise ValueError("Send a paddle position or a direction")

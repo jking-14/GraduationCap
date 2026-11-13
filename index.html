@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css?v=3">
-  <script src="app.js?v=3" defer></script>
+  <link rel="stylesheet" href="style.css?v=4">
+  <script src="app.js?v=4" defer></script>
 </head>
 <body>
 <main>
@@ -47,12 +47,13 @@
   </section>
   <section aria-label="Playable games">
     <div class="section-title"><h2>Your turn</h2><span>PLAY ON THE CAP</span></div>
-    <div class="game-buttons"><button data-game="6" data-control disabled>Pong</button><button data-game="3" data-control disabled>Breakout</button><button data-game="13" data-control disabled>Snake</button></div>
+    <div class="game-buttons"><button data-game="6" data-control disabled>Pong</button><button data-game="3" data-control disabled>Breakout</button><button data-game="13" data-control disabled>Snake</button><button data-game="16" data-control disabled>Platformer</button><button data-game="14" data-control disabled>Space Invaders</button><button data-game="12" data-control disabled>Pac-Man</button></div>
     <p id="gameHelp" class="section-note">Choose a game to play. Animation buttons below run their automatic versions.</p>
-    <label for="paddle">Move your paddle</label><input id="paddle" class="paddle-slider" type="range" min="0" max="23" value="12" disabled>
-    <div id="snakePad" class="snake-pad" aria-label="Snake swipe area">
-      <button data-direction="UP" disabled aria-label="Snake up">↑</button>
-      <div><button data-direction="LEFT" disabled aria-label="Snake left">←</button><button data-direction="DOWN" disabled aria-label="Snake down">↓</button><button data-direction="RIGHT" disabled aria-label="Snake right">→</button></div>
+    <label id="paddleLabel" for="paddle">Move your paddle</label><input id="paddle" class="paddle-slider" type="range" min="0" max="23" value="12" disabled>
+    <button id="gameAction" class="primary game-action" disabled>Jump / Fire</button>
+    <div id="snakePad" class="snake-pad" aria-label="Directional game controls and swipe area">
+      <button data-direction="UP" disabled aria-label="Move up">↑</button>
+      <div><button data-direction="LEFT" disabled aria-label="Move left">←</button><button data-direction="DOWN" disabled aria-label="Move down">↓</button><button data-direction="RIGHT" disabled aria-label="Move right">→</button></div>
     </div>
   </section>
   <section class="playlist" aria-label="Playback controls">
@@ -60,12 +61,12 @@
     <div class="mode-buttons"><button data-mode="DEMO" data-control disabled><strong>Demo</strong><span>20 seconds per scene</span></button><button data-mode="CEREMONY" data-control disabled><strong>Ceremony</strong><span>Shuffled · 3–4 minutes</span></button></div>
   </section>
   <section aria-label="Select an animation">
-    <div class="section-title"><h2>Pick a scene</h2><span id="sceneCount">24 ANIMATIONS</span></div>
+    <div class="section-title"><h2>Pick a scene</h2><span id="sceneCount">25 ANIMATIONS</span></div>
     <p class="section-note">A scene you select keeps playing until you choose another or start a playlist.</p>
     <div id="animations"></div>
   </section>
   <footer><button id="off" class="off-button" data-control disabled>Turn LEDs off</button><p>Made for a moment worth celebrating.</p></footer>
 </main>
-<script src="creative.js?v=3" defer></script>
+<script src="creative.js?v=4" defer></script>
 </body>
 </html>
