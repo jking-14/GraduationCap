@@ -52,7 +52,7 @@ function render() {
   $('connectionBadge').prepend(document.createElement('i'));
   $('connectionBadge').classList.toggle('connected',connected);
   $('nowPlaying').textContent=connected?(state.mode==='OFF'?'LEDs off':state.mode==='DRAW'?'Your drawing':state.animation_name||'Starting playlist…'):'Connect your cap';
-  $('modeLabel').textContent=connected?`${({DEMO:'Demo playlist',CEREMONY:'Ceremony playlist',MANUAL:'Selected scene',OFF:'Playback stopped',DRAW:'Touch drawing',GAME:'You are playing'})[state.mode]||'Ready'} · ${state.port}`:'USB → computer → this phone';
+  $('modeLabel').textContent=connected?`${({DEMO:'Demo playlist',CEREMONY:'Ceremony playlist',MANUAL:'Selected scene',OFF:'Playback stopped',DRAW:'Touch drawing',GAME:'You are playing',RIPPLE:'Touch pond'})[state.mode]||'Ready'} · ${state.port}`:'USB → computer → this phone';
   document.querySelectorAll('[data-control]').forEach(b=>b.disabled=!connected||busy);
   document.querySelectorAll('[data-scene]').forEach(b=>b.classList.toggle('active',connected&&state.animation===Number(b.dataset.scene)));
   document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',connected&&state.mode===b.dataset.mode));

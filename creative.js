@@ -18,7 +18,7 @@ function renderCreative(){
     3:'Move the slider to keep the ball in play. Breakout’s paddle direction is now inverted.',
     6:'You control the red paddle against the blue computer paddle. Move the slider while watching the cap.',
     12:'Use arrows or swipe to steer Pac-Man. Turns are buffered until a passage opens; walls stop you. Avoid ghosts and collect pellets.',
-    13:'Use arrows or swipe. Top and bottom are swapped from the previous version; left and right are unchanged. Avoid walls and your body.',
+    13:'Use arrows or swipe. Left/right have been flipped, with the earlier up/down inversion preserved. Avoid walls and your body.',
     14:'Move your ship with the slider and tap Fire to shoot. Clear the aliens and dodge their shots.',
     16:'The scene scrolls automatically. Tap Jump to clear gaps, platforms and enemies. New runs start after a fall.'
   };
@@ -28,6 +28,7 @@ function renderCreative(){
   $('gameAction').textContent=state.animation===14?'Fire':state.animation===16?'Jump':'Jump / Fire';
   if(state.mode!=='DRAW'){strokes.clear();}
   if(!playing){desiredInput=null;inputEvents=[];}
+  if(typeof renderPond==='function')renderPond();
 }
 function position(event){const r=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(23,Math.floor((event.clientX-r.left)*24/r.width))),y:Math.max(0,Math.min(23,Math.floor((event.clientY-r.top)*24/r.height)))};}
 function paint(x,y){const color=erase?'000000':$('brushColor').value.slice(1);pixels[y*24+x]=color;strokes.set(y*24+x,{x,y,color});}

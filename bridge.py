@@ -104,7 +104,7 @@ class CapBridge:
                 while time.monotonic() < deadline:
                     try:
                         response = self.command("PING", timeout=0.8, require_ready=False)
-                        if response != "PONG CAP/3":
+                        if response != "PONG CAP/4":
                             raise RuntimeError("Different firmware: upload the included gradCap2026 sketch.")
                         with self.lock:
                             self.ready = True
@@ -144,7 +144,7 @@ class CapBridge:
             if generation != self.generation:
                 return
             parts = line.split()
-            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME"}:
+            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME", "RIPPLE"}:
                 try:
                     animation = int(parts[2])
                 except ValueError:
@@ -174,7 +174,7 @@ class CapBridge:
             self._disconnect()
 
     def command(self, verb, argument=None, timeout=3, require_ready=True):
-        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT"}:
+        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT", "TOUCH", "WAVE"}:
             raise ValueError("Unknown command")
         with self.command_lock:
             with self.lock:
@@ -212,7 +212,7 @@ class CapBridge:
                 if generation != self.generation or not self.ready:
                     return
             try:
-                if self.command("PING") != "PONG CAP/3":
+                if self.command("PING") != "PONG CAP/4":
                     raise RuntimeError("Unexpected firmware response")
             except (RuntimeError, TimeoutError) as exc:
                 self._fail(generation, str(exc))
@@ -280,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/":
             self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8"); return
-        if path in {"/app.js", "/creative.js", "/style.css"}:
+        if path in {"/app.js", "/creative.js", "/pond.js", "/style.css"}:
             self.send(200, (WEB / path[1:]).read_bytes(), "text/javascript; charset=utf-8" if path.endswith("js") else "text/css; charset=utf-8"); return
         if not self.authenticated():
             self.send(401, {"error": "Pair this phone using the complete link printed by the bridge."}); return
@@ -332,6 +332,15 @@ class Handler(BaseHTTPRequestHandler):
                 if type(animation) is not int or not 0 <= animation < len(ANIMATIONS):
                     raise ValueError("Invalid animation")
                 reply = bridge.command("PLAY", animation)
+            elif path == "/api/ripple/start":
+                reply = bridge.command("TOUCH")
+            elif path == "/api/ripple":
+                x,y=data.get("x"),data.get("y")
+                if type(x) is not int or type(y) is not int or not 0 <= x < 24 or not 0 <= y < 24:
+                    raise ValueError("Touch coordinates must be between 0 and 23")
+                if bridge.status()["mode"] != "RIPPLE":
+                    raise ValueError("Start the touch pond first")
+                reply = bridge.command("WAVE", f"{x},{y}")
             elif path == "/api/game":
                 game = data.get("id")
                 if type(game) is not int or game not in {3, 6, 12, 13, 14, 16}:
@@ -409,7 +418,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send(404, {"error": "Not found"}); return
             # Ask for state after an applied command; this orders state before HTTP reply.
-            if path not in {"/api/input", "/api/draw/stroke"}:
+            if path not in {"/api/input", "/api/draw/stroke", "/api/ripple"}:
                 bridge.command("STATUS")
             self.send(200, {"ack": reply, "state": bridge.status()})
         except (ValueError, json.JSONDecodeError) as exc:

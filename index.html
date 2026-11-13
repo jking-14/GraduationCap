@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css?v=4">
-  <script src="app.js?v=4" defer></script>
+  <link rel="stylesheet" href="style.css?v=5">
+  <script src="app.js?v=5" defer></script>
 </head>
 <body>
 <main>
@@ -31,6 +31,13 @@
         <p class="hint">Your iPhone and computer must be on the same Wi-Fi. Keep the bridge running on the computer.</p>
       </div>
     </details>
+  </section>
+  <section aria-label="Interactive pond ripples">
+    <div class="section-title"><h2>Touch the pond</h2><span>RIPPLES UNDER YOUR FINGER</span></div>
+    <p class="section-note">Start the touch pond, then tap or drag here. Ripples expand from matching spots on the cap.</p>
+    <canvas id="rippleCanvas" width="480" height="480" aria-label="Touch here to create ripples on the cap"></canvas>
+    <button id="startRipples" class="primary" data-control disabled>Start touch pond</button>
+    <p id="rippleStatus" class="hint" role="status">The regular Pond Ripples animation remains automatic.</p>
   </section>
   <section class="creative" aria-label="Touch drawing">
     <div class="section-title"><h2>Draw on your cap</h2><span>TOUCH CANVAS</span></div>
@@ -67,6 +74,7 @@
   </section>
   <footer><button id="off" class="off-button" data-control disabled>Turn LEDs off</button><p>Made for a moment worth celebrating.</p></footer>
 </main>
-<script src="creative.js?v=4" defer></script>
+<script src="creative.js?v=5" defer></script>
+<script src="pond.js?v=5" defer></script>
 </body>
 </html>
