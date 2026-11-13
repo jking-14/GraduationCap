@@ -25,14 +25,14 @@ function describeError(error) {
   if(error.name==='SyntaxError'||error.name==='TypeError') return 'The browser could not reach the bridge. Open the full Phone link from the running bridge, or paste it below and tap Update.';
   return error.message || 'Connection failed. Update the bridge link below and retry.';
 }
-async function api(path, body) {
+async function api(path, body, extraHeaders={}) {
   if(location.protocol!=='http:' && location.protocol!=='https:')
     throw new Error('This page was opened as a file. Paste the full http:// Phone link printed by the bridge below, then tap Update.');
   if(!validKey(key)) throw new Error('Paste the latest full Phone link from the running bridge, then tap Update.');
   const abort = new AbortController();
   const timer = setTimeout(()=>abort.abort(), path==='/api/connect'?16000:9000);
   try {
-    const response = await fetch(new URL(path,location.href).href, {method:body===undefined?'GET':'POST', headers:{'X-Cap-Key':key,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:abort.signal,cache:'no-store'});
+    const response = await fetch(new URL(path,location.href).href, {method:body===undefined?'GET':'POST', headers:{'X-Cap-Key':key,...extraHeaders,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:abort.signal,cache:'no-store'});
     // Check the reply before parsing so wrong hosts and 404 pages produce
     // useful guidance rather than an opaque browser parsing error.
     const contentType=(response.headers.get('Content-Type')||'').toLowerCase();
@@ -51,8 +51,8 @@ function render() {
   $('connectionBadge').textContent=connected?'Cap connected':(!reachable?'Bridge unavailable':state.port_open?'Waiting for cap reply':'USB disconnected');
   $('connectionBadge').prepend(document.createElement('i'));
   $('connectionBadge').classList.toggle('connected',connected);
-  $('nowPlaying').textContent=connected?(state.mode==='OFF'?'LEDs off':state.mode==='DRAW'?'Your drawing':state.animation_name||'Starting playlist…'):'Connect your cap';
-  $('modeLabel').textContent=connected?`${({DEMO:'Demo playlist',CEREMONY:'Ceremony playlist',MANUAL:'Selected scene',OFF:'Playback stopped',DRAW:'Touch drawing',GAME:'You are playing',RIPPLE:'Touch pond'})[state.mode]||'Ready'} · ${state.port}`:'USB → computer → this phone';
+  $('nowPlaying').textContent=connected?(state.mode==='OFF'?'LEDs off':state.mode==='DRAW'?'Your drawing':({SAND:'Tilt sand',PLASMA:'Plasma globe',VIDEO:'Live camera',TUG:'Tug of war'})[state.mode]||state.animation_name||'Starting playlist…'):'Connect your cap';
+  $('modeLabel').textContent=connected?`${({DEMO:'Demo playlist',CEREMONY:'Ceremony playlist',MANUAL:'Selected scene',OFF:'Playback stopped',DRAW:'Touch drawing',GAME:'You are playing',RIPPLE:'Touch pond',SAND:'Tilt sand',PLASMA:'Plasma globe',VIDEO:'Live camera',TUG:'Tug of war'})[state.mode]||'Ready'} · ${state.port}`:'USB → computer → this phone';
   document.querySelectorAll('[data-control]').forEach(b=>b.disabled=!connected||busy);
   document.querySelectorAll('[data-scene]').forEach(b=>b.classList.toggle('active',connected&&state.animation===Number(b.dataset.scene)));
   document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',connected&&state.mode===b.dataset.mode));
@@ -96,6 +96,7 @@ async function action(path,body,message) {
     state=result.state||result;
     feedback(message);
     if(path==='/api/connect')$('setup').open=false;
+    return result;
   } catch(e) {setupError(describeError(e));}
   finally {busy=false;render();poll();}
 }
@@ -114,8 +115,8 @@ function pairingTarget(value) {
   let url;
   try { url=new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value)?value:'http://'+value); }
   catch(_) { throw new Error('That bridge link is incomplete. Copy the entire Phone link, including http://, port number, and #key=.'); }
-  if(url.protocol!=='http:'||!url.hostname||url.username||url.password||!url.port)
-    throw new Error('Use the full http:// Phone link printed by bridge.py, including its port number (usually :8765).');
+  if(!['http:','https:'].includes(url.protocol)||!url.hostname||url.username||url.password||(url.protocol==='http:'&&!url.port))
+    throw new Error('Use the complete Phone link printed by bridge.py: a local http:// link with its port, or the secure https:// tunnel link.');
   const nextKey=new URLSearchParams(url.hash.slice(1)).get('key');
   if(!nextKey||!validKey(nextKey)) throw new Error('The bridge link needs its pairing key. Copy the entire Phone link, including #key= and everything after it.');
   if(location.hostname!==url.hostname && ['localhost','127.0.0.1','0.0.0.0'].includes(url.hostname))

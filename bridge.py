@@ -5,6 +5,8 @@ import hmac
 import json
 import secrets
 import re
+import subprocess
+from experiences import TugGame, start_tunnel
 import socket
 import threading
 import time
@@ -47,6 +49,8 @@ class CapBridge:
         self.animation = -1
         self.last_ack = None
         self.error = None
+        self.video_owner=None
+        self.video_seen=0
 
     def ports(self):
         provider = self.port_provider or serial_support()[1].comports
@@ -104,7 +108,7 @@ class CapBridge:
                 while time.monotonic() < deadline:
                     try:
                         response = self.command("PING", timeout=0.8, require_ready=False)
-                        if response != "PONG CAP/4":
+                        if response != "PONG CAP/5":
                             raise RuntimeError("Different firmware: upload the included gradCap2026 sketch.")
                         with self.lock:
                             self.ready = True
@@ -144,7 +148,7 @@ class CapBridge:
             if generation != self.generation:
                 return
             parts = line.split()
-            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME", "RIPPLE"}:
+            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME", "RIPPLE", "SAND", "PLASMA", "VIDEO", "TUG"}:
                 try:
                     animation = int(parts[2])
                 except ValueError:
@@ -174,7 +178,7 @@ class CapBridge:
             self._disconnect()
 
     def command(self, verb, argument=None, timeout=3, require_ready=True):
-        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT", "TOUCH", "WAVE"}:
+        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT", "TOUCH", "WAVE", "SAND", "GRAV", "PLASM", "BOLTS", "VIDEO", "TUG", "ROPE"}:
             raise ValueError("Unknown command")
         with self.command_lock:
             with self.lock:
@@ -212,7 +216,7 @@ class CapBridge:
                 if generation != self.generation or not self.ready:
                     return
             try:
-                if self.command("PING") != "PONG CAP/4":
+                if self.command("PING") != "PONG CAP/5":
                     raise RuntimeError("Unexpected firmware response")
             except (RuntimeError, TimeoutError) as exc:
                 self._fail(generation, str(exc))
@@ -235,8 +239,32 @@ class BridgeServer(ThreadingHTTPServer):
     daemon_threads = True
     def __init__(self, address, bridge, token):
         self.bridge, self.token = bridge, token
+        self.public_origin=None
+        self.tug=TugGame()
+        self.stopping=threading.Event()
         self.allowed_hosts = local_addresses() | {"localhost", address[0]}
         super().__init__(address, Handler)
+        threading.Thread(target=self._effects_tick,daemon=True).start()
+
+    def _effects_tick(self):
+        last=None
+        while not self.stopping.wait(.1):
+            current=self.bridge.status()
+            if current["mode"]=="TUG" and current["connected"]:
+                state=self.tug.state();phase={"waiting":0,"countdown":1,"playing":2,"finished":3 if state["winner"]=="red" else 4 if state["winner"]=="blue" else 5}[state["phase"]]
+                value=f'{state["score"]},{phase}'
+                if value!=last:
+                    try:self.bridge.command("ROPE",value);last=value
+                    except (OSError,RuntimeError,TimeoutError):pass
+            else:
+                self.tug.pause();last=None
+            if current["mode"]=="VIDEO" and self.bridge.video_owner and time.monotonic()-self.bridge.video_seen>6:
+                try:self.bridge.command("OFF")
+                except (OSError,RuntimeError,TimeoutError):pass
+
+    def server_close(self):
+        self.stopping.set()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -259,17 +287,19 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def allowed(self):
-        host = self.headers.get("Host", "")
+        host=self.headers.get("Host","")
+        origin=self.headers.get("Origin")
+        local_proxy=self.client_address[0] in {"127.0.0.1","::1"}
         try:
-            parsed = urllib.parse.urlsplit("http://" + host)
-            if parsed.hostname not in self.server.allowed_hosts or parsed.port != self.server.server_port:
-                return False
-        except ValueError:
-            return False
-        origin = self.headers.get("Origin")
-        if origin and origin != "http://" + host:
-            return False
-        return True
+            parsed=urllib.parse.urlsplit("http://"+host)
+            local=parsed.hostname in self.server.allowed_hosts and parsed.port==self.server.server_port
+            public=self.server.public_origin
+            public_host=bool(public and local_proxy and host==urllib.parse.urlsplit(public).netloc)
+            if not local and not public_host:return False
+            allowed_origins={"http://"+host}
+            if public and local_proxy:allowed_origins.add(public)
+            return not origin or origin in allowed_origins
+        except ValueError:return False
 
     def authenticated(self):
         return hmac.compare_digest(self.headers.get("X-Cap-Key", "").encode(), self.server.token.encode())
@@ -280,18 +310,20 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/":
             self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8"); return
-        if path in {"/app.js", "/creative.js", "/pond.js", "/style.css"}:
+        if path in {"/app.js", "/creative.js", "/pond.js", "/effects.js", "/style.css"}:
             self.send(200, (WEB / path[1:]).read_bytes(), "text/javascript; charset=utf-8" if path.endswith("js") else "text/css; charset=utf-8"); return
         if not self.authenticated():
             self.send(401, {"error": "Pair this phone using the complete link printed by the bridge."}); return
         try:
             if path == "/api/status":
                 self.send(200, self.server.bridge.status())
+            elif path == "/api/tug":
+                self.send(200,self.server.tug.state(self.headers.get("X-Player-Key")))
             elif path == "/api/animations":
                 self.send(200, [{"id": i, "name": n} for i, n in enumerate(ANIMATIONS)])
             elif path == "/api/info":
                 addresses = sorted(self.server.allowed_hosts - {"0.0.0.0", "127.0.0.1", "localhost"})
-                self.send(200, {"phone_url": f"http://{addresses[0]}:{self.server.server_port}/#key={self.server.token}" if addresses else None})
+                self.send(200, {"phone_url": f"{self.server.public_origin}/#key={self.server.token}" if self.server.public_origin else f"http://{addresses[0]}:{self.server.server_port}/#key={self.server.token}" if addresses else None})
             elif path == "/api/ports":
                 self.send(200, self.server.bridge.ports())
             else:
@@ -320,6 +352,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected an object")
             path = urllib.parse.urlsplit(self.path).path
             bridge = self.server.bridge
+            extra_result={}
             if path == "/api/connect":
                 port = data.get("port")
                 if not isinstance(port, str):
@@ -332,6 +365,47 @@ class Handler(BaseHTTPRequestHandler):
                 if type(animation) is not int or not 0 <= animation < len(ANIMATIONS):
                     raise ValueError("Invalid animation")
                 reply = bridge.command("PLAY", animation)
+            elif path == "/api/sand/start":
+                reply=bridge.command("SAND")
+            elif path == "/api/sand/gravity":
+                x,y=data.get("x"),data.get("y")
+                if type(x) is not int or type(y) is not int or not -100<=x<=100 or not -100<=y<=100:raise ValueError("Gravity must be between -100 and 100")
+                reply=bridge.command("GRAV",f"{x},{y}")
+            elif path == "/api/plasma/start":
+                reply=bridge.command("PLASM")
+            elif path == "/api/plasma/points":
+                points=data.get("points")
+                if not isinstance(points,list) or len(points)>5:raise ValueError("Use at most five touches")
+                for point in points:
+                    if not isinstance(point,dict) or type(point.get("x")) is not int or type(point.get("y")) is not int or not 0<=point["x"]<24 or not 0<=point["y"]<24:raise ValueError("Invalid plasma point")
+                reply=bridge.command("BOLTS",";".join(f'{p["x"]},{p["y"]}' for p in points) or "-")
+            elif path == "/api/video/start":
+                if bridge.status()["mode"]=="VIDEO" and bridge.video_owner and time.monotonic()-bridge.video_seen<6:raise ValueError("Another camera stream is active; stop it first")
+                reply=bridge.command("VIDEO");bridge.video_owner=secrets.token_urlsafe(24);bridge.video_seen=time.monotonic();extra_result["owner"]=bridge.video_owner
+            elif path in {"/api/video/frame","/api/video/stop"}:
+                owner=data.get("owner")
+                if not isinstance(owner,str) or not bridge.video_owner or not secrets.compare_digest(owner.encode(),bridge.video_owner.encode()):raise ValueError("This phone does not own the camera stream")
+                if bridge.status()["mode"]!="VIDEO":raise ValueError("Camera streaming has ended")
+                if path.endswith("stop"):
+                    reply=bridge.command("OFF");bridge.video_owner=None
+                else:
+                    pixels=data.get("pixels")
+                    if not isinstance(pixels,str) or not re.fullmatch(r"[0-9a-fA-F]{3456}",pixels):raise ValueError("A frame needs exactly 576 RGB pixels")
+                    bridge.video_seen=time.monotonic()
+                    for row in range(24):bridge.command("ROW",f"{row},{pixels[row*144:(row+1)*144]}")
+                    reply=bridge.command("SHOW");bridge.video_seen=time.monotonic()
+            elif path == "/api/tug/open":
+                reply=bridge.command("TUG") if bridge.status()["mode"]!="TUG" else "TUG"
+            elif path.startswith("/api/tug/"):
+                if bridge.status()["mode"]!="TUG":raise ValueError("Open tug of war first")
+                game=self.server.tug
+                if path=="/api/tug/join":
+                    token=game.join(data.get("side"),data.get("client"));self.send(200,{"player":token,"game":game.state(token)});return
+                if path=="/api/tug/start":game.start(data.get("player"))
+                elif path=="/api/tug/tap":game.tap(data.get("player"),data.get("seq"),data.get("count"))
+                elif path=="/api/tug/leave":game.leave(data.get("player"))
+                else:raise ValueError("Unknown tug action")
+                self.send(200,{"game":game.state(data.get("player"))});return
             elif path == "/api/ripple/start":
                 reply = bridge.command("TOUCH")
             elif path == "/api/ripple":
@@ -343,8 +417,8 @@ class Handler(BaseHTTPRequestHandler):
                 reply = bridge.command("WAVE", f"{x},{y}")
             elif path == "/api/game":
                 game = data.get("id")
-                if type(game) is not int or game not in {3, 6, 12, 13, 14, 16}:
-                    raise ValueError("Playable games: Pong, Breakout, Pac-Man, Snake, Space Invaders, Platformer")
+                if type(game) is not int or game not in {3, 6, 13, 14, 16}:
+                    raise ValueError("Playable games: Pong, Breakout, Snake, Space Invaders, Platformer")
                 reply = bridge.command("GAME", game)
             elif path == "/api/input":
                 current=bridge.status()
@@ -371,7 +445,7 @@ class Handler(BaseHTTPRequestHandler):
                     direction = data["direction"]
                     if not isinstance(direction,str) or direction not in {"UP","DOWN","LEFT","RIGHT"}:
                         raise ValueError("Invalid direction")
-                    if game not in {12,13}:
+                    if game != 13:
                         raise ValueError("This game does not use directional controls")
                     reply = bridge.command("INPUT", direction)
                 else:
@@ -418,9 +492,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send(404, {"error": "Not found"}); return
             # Ask for state after an applied command; this orders state before HTTP reply.
-            if path not in {"/api/input", "/api/draw/stroke", "/api/ripple"}:
+            if path not in {"/api/input", "/api/draw/stroke", "/api/ripple", "/api/sand/gravity", "/api/plasma/points", "/api/video/frame"}:
                 bridge.command("STATUS")
-            self.send(200, {"ack": reply, "state": bridge.status()})
+            self.send(200, {"ack": reply, "state": bridge.status(), **extra_result})
         except (ValueError, json.JSONDecodeError) as exc:
             self.send(400, {"error": str(exc)})
         except TimeoutError as exc:
@@ -434,6 +508,7 @@ def main():
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--serial", help="Optional initial USB port, e.g. COM5 or /dev/cu.usbmodem...")
+    parser.add_argument("--tunnel",action="store_true",help="Create a temporary HTTPS phone link using an installed cloudflared")
     args = parser.parse_args()
     try:
         serial_support()
@@ -451,6 +526,13 @@ def main():
         print(f"  Phone:    http://{address}:{server.server_port}/#key={token}")
     print("\nOpen the full link on your computer or iPhone (same Wi-Fi).")
     print("Use the Due Programming USB port. Close Arduino Serial Monitor.\n")
+    tunnel=None
+    if args.tunnel:
+        def ready(origin):
+            server.public_origin=origin
+            print(f"\n  SECURE PHONE: {origin}/#key={token}\nOpen this HTTPS link for iPhone camera and tilt.\n",flush=True)
+        try:tunnel=start_tunnel(server.server_port,ready)
+        except RuntimeError as exc:print(str(exc),flush=True)
     if args.serial:
         try:
             bridge.connect(args.serial)
@@ -461,6 +543,10 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping bridge. The cap keeps its current mode.")
     finally:
+        if tunnel:
+            tunnel.terminate()
+            try:tunnel.wait(timeout=3)
+            except subprocess.TimeoutExpired:tunnel.kill()
         bridge.disconnect()
         server.server_close()
 
