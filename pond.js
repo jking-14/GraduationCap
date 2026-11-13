@@ -17,7 +17,7 @@ function paintPond(){
 }
 function pondPoint(e){const box=pondCanvas.getBoundingClientRect();return{x:Math.max(0,Math.min(23,Math.floor((e.clientX-box.left)*24/box.width))),y:Math.max(0,Math.min(23,Math.floor((e.clientY-box.top)*24/box.height)))};}
 function touchPond(point){
-  pondPreview.push({x:23-point.x,y:23-point.y,born:Date.now()});if(pondPreview.length>8)pondPreview.shift();if(!pondAnimating)paintPond();
+  pondPreview.push({...point,born:Date.now()});if(pondPreview.length>8)pondPreview.shift();if(!pondAnimating)paintPond();
   if(!reachable||!state.connected||state.mode!=='RIPPLE'||busy){$('rippleStatus').textContent='Preview only. Connect the cap and tap Start touch pond to send ripples.';return;}
   pondQueue.push(point);if(pondQueue.length>8)pondQueue.shift();flushPond();
 }
@@ -30,7 +30,7 @@ async function flushPond(){
   }}catch(e){pondQueue=[];if(session===revision){$('rippleStatus').textContent='Touch not confirmed. Start the touch pond again to retry.';setupError(describeError(e));}}
   finally{pondSending=false;}
 }
-$('startRipples').onclick=async()=>{pondQueue=[];pondPreview=[];await action('/api/ripple/start',{},'Touch pond ready — tap or drag the pond surface.');paintPond();$('rippleStatus').textContent=state.mode==='RIPPLE'?'Tap or drag. The cap output is rotated 180° from the touch surface.':'Start the touch pond after connecting the cap.';};
+$('startRipples').onclick=async()=>{pondQueue=[];pondPreview=[];await action('/api/ripple/start',{},'Touch pond ready — tap or drag the pond surface.');paintPond();$('rippleStatus').textContent=state.mode==='RIPPLE'?'Tap or drag. The preview stays under your finger; the cap’s ripple origin has been rotated.':'Start the touch pond after connecting the cap.';};
 pondCanvas.addEventListener('pointerdown',e=>{e.preventDefault();pondCanvas.setPointerCapture(e.pointerId);const point=pondPoint(e);pondPointers.set(e.pointerId,{...point,time:Date.now()});touchPond(point);});
 pondCanvas.addEventListener('pointermove',e=>{const previous=pondPointers.get(e.pointerId);if(!previous)return;e.preventDefault();const point=pondPoint(e),now=Date.now();if(now-previous.time>=130&&(point.x!==previous.x||point.y!==previous.y)){pondPointers.set(e.pointerId,{...point,time:now});touchPond(point);}});
 for(const event of ['pointerup','pointercancel'])pondCanvas.addEventListener(event,e=>pondPointers.delete(e.pointerId));

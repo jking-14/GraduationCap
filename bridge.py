@@ -108,7 +108,7 @@ class CapBridge:
                 while time.monotonic() < deadline:
                     try:
                         response = self.command("PING", timeout=0.8, require_ready=False)
-                        if response != "PONG CAP/5":
+                        if response != "PONG CAP/6":
                             raise RuntimeError("Different firmware: upload the included gradCap2026 sketch.")
                         with self.lock:
                             self.ready = True
@@ -148,7 +148,7 @@ class CapBridge:
             if generation != self.generation:
                 return
             parts = line.split()
-            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME", "RIPPLE", "SAND", "PLASMA", "VIDEO", "TUG"}:
+            if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME", "RIPPLE", "SAND", "PLASMA", "VIDEO", "TUG", "PARTICLES"}:
                 try:
                     animation = int(parts[2])
                 except ValueError:
@@ -178,7 +178,7 @@ class CapBridge:
             self._disconnect()
 
     def command(self, verb, argument=None, timeout=3, require_ready=True):
-        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT", "TOUCH", "WAVE", "SAND", "GRAV", "PLASM", "BOLTS", "VIDEO", "TUG", "ROPE"}:
+        if verb not in {"PING", "STATUS", "PLAY", "MODE", "OFF", "DRAW", "PIX", "ROW", "SHOW", "CLEAR", "GAME", "INPUT", "TOUCH", "WAVE", "SAND", "GRAV", "PLASM", "BOLTS", "VIDEO", "TUG", "ROPE", "MELT"}:
             raise ValueError("Unknown command")
         with self.command_lock:
             with self.lock:
@@ -216,7 +216,7 @@ class CapBridge:
                 if generation != self.generation or not self.ready:
                     return
             try:
-                if self.command("PING") != "PONG CAP/5":
+                if self.command("PING") != "PONG CAP/6":
                     raise RuntimeError("Unexpected firmware response")
             except (RuntimeError, TimeoutError) as exc:
                 self._fail(generation, str(exc))
@@ -456,7 +456,7 @@ class Handler(BaseHTTPRequestHandler):
                 if bridge.status()["mode"] != "DRAW":
                     bridge.command("DRAW")
                 reply = bridge.command("CLEAR")
-            elif path == "/api/draw/frame":
+            elif path in {"/api/draw/frame","/api/draw/particles"}:
                 pixels = data.get("pixels")
                 if not isinstance(pixels,str) or not re.fullmatch(r"[0-9a-fA-F]{3456}",pixels):
                     raise ValueError("A drawing needs exactly 576 RGB pixels")
@@ -465,6 +465,7 @@ class Handler(BaseHTTPRequestHandler):
                 for row in range(24):
                     bridge.command("ROW",f"{row},{pixels[row*144:(row+1)*144]}")
                 reply = bridge.command("SHOW")
+                if path=="/api/draw/particles":reply=bridge.command("MELT")
             elif path == "/api/draw/stroke":
                 pixels = data.get("pixels")
                 if not isinstance(pixels,list) or not 1 <= len(pixels) <= 32:

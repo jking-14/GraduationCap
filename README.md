@@ -6,9 +6,9 @@ A local Python-to-USB bridge for Jason’s 24×24 Arduino Due cap. It serves a p
 
 ## Updating to this release
 
-Upload `firmware/gradCap2026/gradCap2026.ino` again, replace the bridge folder, restart the bridge, and open its new full Phone link. This release uses **CAP/5** and requires the included firmware. Older firmware is rejected with an update message.
+Upload `firmware/gradCap2026/gradCap2026.ino` again, replace the bridge folder, restart the bridge, and open its new full Phone link. This release uses **CAP/6** and requires the included firmware. Older firmware is rejected with an update message.
 
-Manual Pac-Man control has been removed. The automatic Pac-Man animation remains in both playlists. The pond’s input/output relationship has been rotated 180° from the previous release. Pong and Snake keep their most recently requested control inversions.
+Manual Pac-Man control has been removed. The automatic Pac-Man animation remains in both playlists. The pond’s on-screen preview now stays under your finger; the actual LED ripple origin is corrected in firmware. Pong and Snake keep their most recently requested control inversions.
 
 ## 1. Upload the firmware
 
@@ -70,7 +70,9 @@ Omit `--tunnel` for local-only operation. Optional arguments: `--port 8766` if t
 
 Click Start / reset sand. The Due simulates 140 grains with collisions and piling against the matrix edges. Click Enable tilt on the HTTPS phone page and allow motion access. Tilt changes the gravity direction; Calibrate level sets your current angle as neutral. Invert tilt flips both axes if your phone/viewing position needs it. Portrait and landscape orientation are accounted for.
 
-Manual gravity sliders work without sensor permission. If the phone stops sending gravity for two seconds, the grains settle toward screen-down. Reset sand restarts the grains. Device orientation uses iPhone sensor-fused tilt data; no physical sensor is added to the cap.
+Manual gravity sliders work without sensor permission. If the phone stops sending gravity for two seconds, the grains settle toward screen-down. Reset sand restarts the grains. Tilt now prefers the iPhone’s `devicemotion` gravity readings and falls back to `deviceorientation` when needed. Both permission requests are initiated during your Enable tilt tap, before any network request. Open the HTTPS link directly in Safari, allow Motion & Orientation, then tip the phone. Flat, neutral input can produce zero in-plane gravity; calibrate only when you want the current holding angle to be neutral.
+
+The **Sensors / cap gravity** line distinguishes real sensor readings from permission alone and shows the last acknowledged gravity vector. If permission is allowed but no reading arrives for five seconds, the page says so. A successful vector acknowledgment verifies the phone → bridge → Due path. Use Invert tilt if your viewing orientation needs both axes reversed. Manual slider directions are refreshed continuously rather than expiring after two seconds. No physical sensor is added to the cap.
 
 ## Plasma globe
 
@@ -81,6 +83,8 @@ Start plasma, then hold up to five fingers on its touch surface. The Due draws b
 Open the HTTPS link, click Start camera and allow the camera. The app uses the rear camera where available, crops a central square, downsamples it to 24×24 RGB and sends those pixels to the cap. Mirror is optional. A tiny raster preview sits alongside the local camera preview.
 
 Default target is **2 frames per second**; the selector allows 1–3. Actual rate depends on USB transfer and network latency. This is a small lo-fi live raster, not full-rate video. Only one frame is sent at a time, so old frames do not build up. Only one phone owns the camera stream at a time.
+
+The raster preview includes the active filters. Choose **Natural**, **Low light**, **Bright / high contrast**, **Grayscale**, **Silhouette**, or **Edges**. Auto exposure estimates useful dark/light bounds per frame. Brightness, contrast and gamma sliders let you tune difficult lighting; lower gamma lifts shadows. Presets reset those sliders to useful defaults, and all filtering runs on the phone before the RGB raster is sent.
 
 Stop camera releases the camera and turns that stream off. Selecting another cap mode or hiding the page also stops the local camera. The bridge turns stale VIDEO mode off after six seconds without frames. No microphone is requested and no video is recorded.
 
@@ -97,8 +101,14 @@ Leave seat frees your spot. A player who disappears for more than 15 seconds dur
 
 ## Touch pond and drawing
 
-- **Start touch pond:** tap/drag to create up to eight overlapping blue-green rings. The cap output and preview are now rotated 180° relative to the touch input, as requested. The ordinary Pond Ripples animation in the playlists stays automatic.
+- **Start touch pond:** tap/drag to create up to eight overlapping blue-green rings. The preview follows the finger without a flip. The actual LED origin is rotated in firmware, independently of the phone preview. The ordinary Pond Ripples animation in the playlists stays automatic.
 - **Draw on your cap:** draw on the 24×24 canvas, choose a color, or erase. Click Show drawing to enter drawing mode. With Live checked, new strokes update the cap. Drawings save locally in that browser when a stroke finishes. If a transfer fails, Show drawing resends the full canvas.
+
+### Turn a drawing into tilt particles
+
+Draw colored pixels with some black/empty space, then tap **Turn drawing into tilt particles**. The phone requests sensor permission during that tap, sends the latest full drawing, and converts each colored pixel into a moving grain on the Due. Colors are retained, particles collide/pile, and black or erased pixels are empty. A completely filled canvas has no room to flow.
+
+The same tilt, calibration, inversion and manual gravity controls work for sand and drawing particles. If motion permission is unavailable, the drawing can still become particles using the manual sliders; the page explains how to enable tilt. **Show drawing on cap** restores the original saved sketch. **Clear** exits particle mode and clears the drawing.
 
 Preview feedback is immediate. A confirmation message means the Due acknowledged the request; its next frame displays the result.
 
@@ -122,7 +132,7 @@ The connection section keeps Bridge link or pairing key, Update and Retry availa
 | --- | --- |
 | No serial ports | Data cable, USB reconnection, correct port in Arduino IDE, refresh port list. |
 | Port cannot open | Close Serial Monitor/Plotter and other apps using it. Check serial-device permissions on Linux. |
-| Cap does not acknowledge | Upload the included CAP/5 firmware and match Programming vs Native USB. |
+| Cap does not acknowledge | Upload the included CAP/6 firmware and match Programming vs Native USB. |
 | Phone cannot open local link | Same Wi-Fi, actual Wi-Fi IPv4 address, private-network firewall permission for Python, no guest-network client isolation/VPN conflict. |
 | Camera/tilt unavailable | Use SECURE PHONE HTTPS link in Safari; allow the website’s camera/motion permission. Sliders remain available for sand. |
 | Secure link never appears | Install cloudflared, check internet, and use the secure launcher or --tunnel. The computer window must stay open. |
@@ -146,15 +156,16 @@ ASAN_OPTIONS=detect_leaks=0 /tmp/cap-firmware-test
 
 Checks use simulated USB and host FastLED/serial stand-ins. They cover bridge routing, seats/timing/replay, frame ownership, UI recovery and feature requests, drawing/coordinate bounds, grain conservation, plasma targets, and interruption of all playlist scenes. They do not verify physical USB/LED timing, an Arduino Due build/upload, actual Safari sensor/camera permission, or a real external HTTPS tunnel. Browser rendering is unverified because Chromium startup is blocked in this workspace.
 
-## Protocol CAP/5
+## Protocol CAP/6
 
-ASCII, newline-terminated at 115200 baud. Request IDs are positive decimal numbers up to nine digits. `ACK id message` confirms acceptance; `ERR id reason` rejects it. `STATE mode animationId` precedes status/transition acknowledgments. `PING id` replies `PONG CAP/5`; STATUS also reports current state.
+ASCII, newline-terminated at 115200 baud. Request IDs are positive decimal numbers up to nine digits. `ACK id message` confirms acceptance; `ERR id reason` rejects it. `STATE mode animationId` precedes status/transition acknowledgments. `PING id` replies `PONG CAP/6`; STATUS also reports current state.
 
 - PLAY id animationId; MODE id DEMO or CEREMONY; OFF id.
 - GAME id gameId (3, 6, 13, 14, 16); INPUT id P0..P23 / UP / DOWN / LEFT / RIGHT / JUMP / FIRE, as applicable.
 - DRAW id; PIX id x,y,rrggbb; ROW id row,144HexCharacters; SHOW id; CLEAR id. VIDEO mode also accepts pixel/row/show commands. The bridge sends 24 rows and SHOW per video frame.
-- TOUCH id; WAVE id x,y. WAVE now uses raw touch coordinates through the scene’s 180-degree turn.
-- SAND id; GRAV id x,y (each -100..100).
+- TOUCH id; WAVE id x,y. WAVE rotates the actual origin by 180 degrees in firmware; the phone preview is not mirrored.
+- SAND id; GRAV id x,y (each -100..100). GRAV also controls drawing-particle mode.
+- MELT id converts the staged drawing to PARTICLES mode, preserving occupied pixels’ colors. HTTP `/api/draw/particles` stages the full drawing before MELT.
 - PLASM id; BOLTS id x,y;x,y (up to five points), or BOLTS id - to release all touches.
 - VIDEO id selects frame-driven video mode. HTTP owner checks apply to camera requests.
 - TUG id; ROPE id score,phase (-40..40; 0 waiting, 1 countdown, 2 playing, 3 red win, 4 blue win, 5 draw). The bridge computes the score and round state.

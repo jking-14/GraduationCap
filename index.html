@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css?v=6">
-  <script src="app.js?v=6" defer></script>
+  <link rel="stylesheet" href="style.css?v=7">
+  <script src="app.js?v=7" defer></script>
 </head>
 <body>
 <main>
@@ -38,6 +38,7 @@
     <div class="setup-actions"><button id="startSand" class="primary" data-control disabled>Start / reset sand</button><button id="enableTilt" class="secondary">Enable tilt</button></div>
     <div class="setup-actions"><button id="calibrateTilt" class="secondary">Calibrate level</button><label class="live-label"><input id="invertTilt" type="checkbox"> Invert tilt</label></div>
     <details><summary>Manual gravity controls</summary><label for="gravityX">Left / right</label><input id="gravityX" class="paddle-slider" type="range" min="-100" max="100" value="0"><label for="gravityY">Up / down</label><input id="gravityY" class="paddle-slider" type="range" min="-100" max="100" value="80"></details>
+    <p id="tiltDiagnostics" class="hint" role="status">Sensors: not enabled · cap gravity: not confirmed</p>
     <p id="sandStatus" class="hint" role="status">Enable tilt after starting sand, or use the gravity sliders.</p>
   </section>
   <section aria-label="Multi touch plasma globe">
@@ -52,6 +53,13 @@
     <div class="camera-previews"><video id="cameraFeed" autoplay muted playsinline aria-label="Local camera preview"></video><canvas id="videoRaster" width="24" height="24" aria-label="24 by 24 camera raster preview"></canvas></div>
     <div class="setup-actions"><button id="startVideo" class="primary" data-control disabled>Start camera</button><button id="stopVideo" class="secondary" disabled>Stop camera</button></div>
     <div class="drawing-tools"><label class="live-label"><input id="mirrorVideo" type="checkbox"> Mirror</label><label>Updates/sec <select id="videoFPS"><option>1</option><option selected>2</option><option>3</option></select></label></div>
+    <div class="video-filters">
+      <label for="videoFilter">Lighting / style</label><select id="videoFilter"><option value="natural">Natural</option><option value="lowlight">Low light</option><option value="bright">Bright / high contrast</option><option value="mono">Grayscale</option><option value="silhouette">Silhouette</option><option value="edges">Edges</option></select>
+      <label class="live-label"><input id="autoExposure" type="checkbox" checked> Auto exposure</label>
+      <label for="videoBrightness">Brightness</label><input id="videoBrightness" class="paddle-slider" type="range" min="-80" max="80" value="0">
+      <label for="videoContrast">Contrast</label><input id="videoContrast" class="paddle-slider" type="range" min="50" max="250" value="100">
+      <label for="videoGamma">Shadow lift / gamma</label><input id="videoGamma" class="paddle-slider" type="range" min="40" max="180" value="100">
+    </div>
     <p id="videoStatus" class="hint" role="status">Only the tiny RGB raster leaves your phone. No audio or video recording.</p>
   </section>
   <section aria-label="Two player tug of war">
@@ -66,7 +74,7 @@
   </section>
   <section aria-label="Interactive pond ripples">
     <div class="section-title"><h2>Touch the pond</h2><span>RIPPLES UNDER YOUR FINGER</span></div>
-    <p class="section-note">Start the touch pond, then tap or drag here. The cap’s touch mapping is rotated 180° from the touch surface.</p>
+    <p class="section-note">Start the touch pond, then tap or drag here. The preview follows your finger. The actual cap mapping is corrected separately.</p>
     <canvas id="rippleCanvas" width="480" height="480" aria-label="Touch here to create ripples on the cap"></canvas>
     <button id="startRipples" class="primary" data-control disabled>Start touch pond</button>
     <p id="rippleStatus" class="hint" role="status">The regular Pond Ripples animation remains automatic.</p>
@@ -82,6 +90,8 @@
       <label class="live-label"><input id="liveDrawing" type="checkbox" checked> Live</label>
     </div>
     <button id="showDrawing" class="primary" data-control disabled>Show drawing on cap</button>
+    <button id="animateDrawing" class="secondary" data-control disabled>Turn drawing into tilt particles</button>
+    <p id="drawingTiltStatus" class="hint" role="status">Black pixels are empty space. Show drawing restores your original sketch.</p>
     <p id="drawingStatus" class="hint" role="status">You can sketch before connecting.</p>
   </section>
   <section aria-label="Playable games">
@@ -106,8 +116,8 @@
   </section>
   <footer><button id="off" class="off-button" data-control disabled>Turn LEDs off</button><p>Made for a moment worth celebrating.</p></footer>
 </main>
-<script src="creative.js?v=6" defer></script>
-<script src="pond.js?v=6" defer></script>
-<script src="effects.js?v=6" defer></script>
+<script src="creative.js?v=7" defer></script>
+<script src="pond.js?v=7" defer></script>
+<script src="effects.js?v=7" defer></script>
 </body>
 </html>

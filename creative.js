@@ -40,7 +40,7 @@ canvas.addEventListener('pointerup',finishStroke);canvas.addEventListener('point
 $('eraser').onclick=()=>{erase=!erase;$('eraser').setAttribute('aria-pressed',String(erase));};
 $('brushColor').oninput=()=>{erase=false;$('eraser').setAttribute('aria-pressed','false');};
 $('showDrawing').onclick=async()=>{strokes.clear();await action('/api/draw/frame',{pixels:pixels.join('')},'Drawing displayed — cap confirmed.');$('drawingStatus').textContent=state.mode==='DRAW'?'New strokes send live when Live is checked.':'Drawing remains saved on this phone.';};
-$('clearDrawing').onclick=async()=>{pixels.fill('000000');strokes.clear();drawPreview();saveDrawing();if(reachable&&state.connected&&state.mode==='DRAW')await action('/api/draw/clear',{},'Drawing cleared — cap confirmed.');else $('drawingStatus').textContent='Canvas cleared on this phone.';};
+$('clearDrawing').onclick=async()=>{pixels.fill('000000');strokes.clear();drawPreview();saveDrawing();if(reachable&&state.connected&&['DRAW','PARTICLES'].includes(state.mode))await action('/api/draw/clear',{},'Drawing cleared — cap confirmed.');else $('drawingStatus').textContent='Canvas cleared on this phone.';};
 $('liveDrawing').onchange=()=>{if($('liveDrawing').checked&&state.mode==='DRAW')$('showDrawing').click();};
 async function flushStroke(){
   if(strokeBusy||busy||!reachable||!state.connected||state.mode!=='DRAW'||!$('liveDrawing').checked||!strokes.size)return;

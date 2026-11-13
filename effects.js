@@ -1,5 +1,6 @@
 'use strict';
-let tiltEnabled=false,lastTilt=null,tiltZero={beta:0,gamma:0},gravityWanted=null,gravitySending=false;
+let tiltEnabled=false,lastTilt=null,lastMotion=null,lastSampleAt=0,motionAt=0,sensorSource="none",sensorTimer=null;
+let tiltZero={beta:0,gamma:0},motionZero={x:0,y:0},latestForce=null,gravityWanted=null,gravitySending=false,lastGravityAck=null,melting=false;
 const plasmaCanvas=$('plasmaCanvas'),plasmaCtx=plasmaCanvas.getContext('2d'),plasmaTouches=new Map();
 let plasmaWanted=null,plasmaSending=false;
 let cameraStream=null,cameraOwner=null,cameraStarting=false,cameraSession=0,cameraTimer=null;
@@ -9,8 +10,8 @@ if(!/^[a-z0-9_-]{8,80}$/i.test(visitor)){visitor='v'+Math.random().toString(36).
 function savePlayer(){try{sessionStorage.setItem('cap-tug-player',tugPlayer);sessionStorage.setItem('cap-tug-seq',String(tugSeq));}catch(_){}}
 function renderEffects(){
   const connected=reachable&&state.connected&&!busy;
-  $('enableTilt').disabled=!connected||state.mode!=='SAND';$('calibrateTilt').disabled=!tiltEnabled;
-  if(state.mode!=='SAND'&&tiltEnabled){tiltEnabled=false;window.removeEventListener('deviceorientation',orientation);gravityWanted=null;}
+  $('enableTilt').disabled=!connected||!['SAND','PARTICLES'].includes(state.mode);$('calibrateTilt').disabled=!tiltEnabled;
+  if(!['SAND','PARTICLES'].includes(state.mode)&&tiltEnabled)stopTilt();
   $('calibrateTilt').disabled=!tiltEnabled;
   if(state.mode!=='PLASMA'){plasmaTouches.clear();plasmaWanted=null;}
   if(cameraStream&&!cameraStarting&&(state.mode!=='VIDEO'||cameraSession!==revision))stopCameraLocal();
@@ -24,31 +25,82 @@ function renderEffects(){
   if(!tug)tugTaps=0;
 }
 function bounded(n){return Math.max(-100,Math.min(100,Math.round(n)));}
+function tiltMessage(message){$('sandStatus').textContent=message;$('drawingTiltStatus').textContent=message;}
+function tiltDiagnostics(ack){
+  if(ack)lastGravityAck=ack;
+  const seen=lastSampleAt?Math.max(0,Math.round((Date.now()-lastSampleAt)/1000)):null;
+  $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation');
+}
+function stopTilt(){
+  tiltEnabled=false;window.removeEventListener('deviceorientation',orientation);window.removeEventListener('devicemotion',motion);
+  if(sensorTimer)clearTimeout(sensorTimer);sensorTimer=null;gravityWanted=null;latestForce=null;
+}
+function forceInScreen(x,y){
+  const angle=((screen.orientation&&screen.orientation.angle)||window.orientation||0)*Math.PI/180;
+  const flip=$('invertTilt').checked?-1:1;
+  latestForce={x:bounded((x*Math.cos(angle)+y*Math.sin(angle))*flip),y:bounded((-x*Math.sin(angle)+y*Math.cos(angle))*flip)};
+  gravityWanted={...latestForce};tiltDiagnostics();
+}
+function motion(event){
+  const a=event.accelerationIncludingGravity;
+  if(!a||!Number.isFinite(a.x)||!Number.isFinite(a.y)||!Number.isFinite(a.z)||Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z)<.01)return;
+  lastMotion={x:-a.x,y:a.y};motionAt=Date.now();lastSampleAt=motionAt;sensorSource='gravity sensor';
+  forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);
+}
 function orientation(event){
   if(!Number.isFinite(event.beta)||!Number.isFinite(event.gamma))return;
   lastTilt={beta:event.beta,gamma:event.gamma};
-  const angle=((screen.orientation&&screen.orientation.angle)||window.orientation||0)*Math.PI/180;
-  const x=(event.gamma-tiltZero.gamma)*2,y=(event.beta-tiltZero.beta)*2,flip=$('invertTilt').checked?-1:1;
-  gravityWanted={x:bounded((x*Math.cos(angle)+y*Math.sin(angle))*flip),y:bounded((-x*Math.sin(angle)+y*Math.cos(angle))*flip)};
-  $('sandStatus').textContent='Tilt active. Tip the phone to move the sand; calibrate to set your neutral angle.';
+  if(lastMotion&&Date.now()-motionAt<1500)return;
+  lastSampleAt=Date.now();sensorSource='orientation fallback';
+  forceInScreen(Math.sin((event.gamma-tiltZero.gamma)*Math.PI/180)*100,Math.sin((event.beta-tiltZero.beta)*Math.PI/180)*100);
+}
+async function requestPhoneSensors(){
+  if(!window.isSecureContext)throw new Error('Tilt needs the SECURE PHONE https:// link. Start the bridge with --tunnel; the manual gravity sliders work here.');
+  const types=[typeof DeviceMotionEvent!=='undefined'?DeviceMotionEvent:null,typeof DeviceOrientationEvent!=='undefined'?DeviceOrientationEvent:null].filter(Boolean);
+  if(!types.length)throw new Error('This browser has no motion sensor API. Use Safari on the iPhone, or the manual gravity sliders.');
+  // Invoke both permission requests during the original tap, before any network await.
+  const requests=[];for(const type of types)if(typeof type.requestPermission==='function'){try{requests.push(type.requestPermission());}catch(e){requests.push(Promise.reject(e));}}
+  const results=await Promise.allSettled(requests);
+  if(requests.length&&!results.some(r=>r.status==='fulfilled'&&r.value==='granted'))throw new Error('Motion permission was denied. Allow Motion & Orientation for this site in Safari, then tap Enable tilt again.');
+}
+function startPhoneSensors(){
+  stopTilt();lastGravityAck=null;lastTilt=null;lastMotion=null;lastSampleAt=0;motionAt=0;tiltEnabled=true;
+  window.addEventListener('devicemotion',motion);window.addEventListener('deviceorientation',orientation);
+  tiltMessage('Motion permission allowed. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
+  sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. Open the SECURE PHONE link in Safari and check Motion & Orientation permission, or use the sliders.');},5000);
 }
 async function flushGravity(){
-  if(gravitySending||busy||!reachable||state.mode!=='SAND'||!gravityWanted)return;
-  gravitySending=true;const value=gravityWanted;gravityWanted=null;
-  try{await requestSerial('/api/sand/gravity',value);}catch(e){$('sandStatus').textContent=describeError(e);}finally{gravitySending=false;}
+  if(gravitySending||busy||!reachable||!['SAND','PARTICLES'].includes(state.mode)||!gravityWanted)return;
+  gravitySending=true;const value=gravityWanted;gravityWanted=null;const session=revision;
+  try{await requestSerial('/api/sand/gravity',value);if(session===revision){tiltDiagnostics(value.x+', '+value.y+' confirmed');tiltMessage(tiltEnabled?(lastSampleAt?'Tilt active — cap gravity confirmed. Tip the phone; Calibrate sets neutral.':'Manual gravity confirmed; still waiting for sensor readings.'):'Manual gravity confirmed.');}}
+  catch(e){if(session===revision)tiltMessage(describeError(e));}finally{gravitySending=false;}
 }
 $('startSand').onclick=()=>action('/api/sand/start',{},'Sand ready. Enable tilt or use the gravity sliders.');
-$('enableTilt').onclick=async()=>{
+$('enableTilt').onclick=async()=>{try{await requestPhoneSensors();startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);tiltDiagnostics();renderEffects();}};
+$('animateDrawing').onclick=async()=>{
+  if(busy||melting)return;
+  const count=pixels.filter(color=>color!=='000000').length;
+  if(!count){$('drawingTiltStatus').textContent='Draw some colored pixels first. Black pixels are empty space.';return;}
+  if(count===576){$('drawingTiltStatus').textContent='Erase some space first: a fully packed canvas has no room for particles to move.';return;}
+  melting=true;
   try{
-    if(!window.isSecureContext)throw new Error('iPhone tilt needs the SECURE PHONE https:// link. Start the bridge with --tunnel. Manual gravity sliders still work here.');
-    if(typeof DeviceOrientationEvent==='undefined')throw new Error('Orientation sensors are unavailable. Use the manual gravity sliders.');
-    if(typeof DeviceOrientationEvent.requestPermission==='function'&&await DeviceOrientationEvent.requestPermission()!=='granted')throw new Error('Motion permission was denied. Allow Motion & Orientation for this website in Safari, or use the sliders.');
-    lastTilt=null;tiltEnabled=true;window.addEventListener('deviceorientation',orientation);$('sandStatus').textContent='Motion allowed. Tilt the phone; waiting for sensor data…';renderEffects();
-  }catch(e){$('sandStatus').textContent=e.message;}
+    let sensorError=null;try{await requestPhoneSensors();}catch(e){sensorError=e;}
+    await action('/api/draw/particles',{pixels:pixels.join('')},'Your drawing is now loose particles. Show drawing restores the original.');
+    if(state.mode==='PARTICLES'){if(!sensorError)startPhoneSensors();else tiltMessage('Drawing particles are ready. '+sensorError.message);}
+  }finally{melting=false;}
 };
-$('calibrateTilt').onclick=()=>{if(lastTilt){tiltZero={...lastTilt};orientation(lastTilt);}};
-for(const id of ['gravityX','gravityY'])$(id).addEventListener('input',()=>{tiltEnabled=false;window.removeEventListener('deviceorientation',orientation);gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};flushGravity();});
-setInterval(()=>{if(tiltEnabled&&lastTilt&&state.mode==='SAND')orientation(lastTilt);flushGravity();},180);
+$('calibrateTilt').onclick=()=>{
+  if(lastTilt)tiltZero={...lastTilt};if(lastMotion)motionZero={...lastMotion};
+  if(lastMotion&&Date.now()-motionAt<1500)forceInScreen(0,0);else if(lastTilt)orientation(lastTilt);
+};
+$('invertTilt').onchange=()=>{if(lastMotion&&Date.now()-motionAt<1500)forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);else if(lastTilt)orientation(lastTilt);};
+for(const id of ['gravityX','gravityY'])$(id).addEventListener('input',()=>{stopTilt();gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};flushGravity();});
+setInterval(()=>{
+  if(document.hidden||!['SAND','PARTICLES'].includes(state.mode))return;
+  if(tiltEnabled&&latestForce)gravityWanted={...latestForce};
+  else if(!tiltEnabled)gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};
+  flushGravity();
+},180);
 function plasmaPoint(e){const b=plasmaCanvas.getBoundingClientRect();return{x:Math.max(0,Math.min(23,Math.floor((e.clientX-b.left)*24/b.width))),y:Math.max(0,Math.min(23,Math.floor((e.clientY-b.top)*24/b.height)))};}
 function previewPlasma(){
   plasmaCtx.fillStyle='#0b0717';plasmaCtx.fillRect(0,0,480,480);plasmaCtx.strokeStyle='#6746b3';plasmaCtx.lineWidth=3;
@@ -77,13 +129,50 @@ function rasterHex(data,mirror=false){
   // Reverse 180 degrees before transmission to compensate the cap's scene turn.
   let hex='';for(let y=23;y>=0;y--)for(let x=23;x>=0;x--){const i=(y*24+(mirror?23-x:x))*4;for(let c=0;c<3;c++)hex+=data[i+c].toString(16).padStart(2,'0');}return hex;
 }
+function filterRaster(data,options={}){
+  const mode=options.mode||'natural',brightness=Number(options.brightness)||0,contrast=Number(options.contrast)||1,gamma=Number(options.gamma)||1;
+  const luma=new Float32Array(576),hist=new Uint16Array(256);let sum=0;
+  for(let n=0;n<576;n++){const i=n*4;const light=.2126*data[i]+.7152*data[i+1]+.0722*data[i+2];luma[n]=light;hist[Math.round(light)]++;sum+=light;}
+  let gain=1,offset=0;
+  if(options.auto){
+    let accumulated=0,low=0,high=255;
+    for(let i=0;i<256;i++){accumulated+=hist[i];if(accumulated>=29){low=i;break;}}
+    accumulated=0;for(let i=255;i>=0;i--){accumulated+=hist[i];if(accumulated>=29){high=i;break;}}
+    if(high-low>=24){gain=Math.max(.6,Math.min(4,200/(high-low)));offset=16-low*gain;}
+    else gain=Math.max(.7,Math.min(2.5,110/(sum/576+1)));
+  }
+  const out=new Uint8ClampedArray(data.length);
+  const adjust=value=>Math.max(0,Math.min(255,255*Math.pow(Math.max(0,Math.min(255,((value*gain+offset)-128)*contrast+128+brightness))/255,gamma)));
+  for(let n=0;n<576;n++){
+    const i=n*4;let r=adjust(data[i]),g=adjust(data[i+1]),b=adjust(data[i+2]);
+    if(mode==='mono'||mode==='silhouette'){let v=.2126*r+.7152*g+.0722*b;if(mode==='silhouette')v=v>=128?235:0;r=g=b=v;}
+    if(mode==='edges'){
+      const x=n%24,y=Math.floor(n/24),get=(dx,dy)=>luma[Math.max(0,Math.min(23,y+dy))*24+Math.max(0,Math.min(23,x+dx))];
+      const gx=-get(-1,-1)+get(1,-1)-2*get(-1,0)+2*get(1,0)-get(-1,1)+get(1,1);
+      const gy=-get(-1,-1)-2*get(0,-1)-get(1,-1)+get(-1,1)+2*get(0,1)+get(1,1);
+      const edge=adjust(Math.min(255,Math.sqrt(gx*gx+gy*gy)*.7));r=edge*.25;g=edge;b=edge;
+    }
+    out[i]=r;out[i+1]=g;out[i+2]=b;out[i+3]=255;
+  }
+  return out;
+}
+function videoSettings(){return{mode:$('videoFilter').value||'natural',auto:$('autoExposure').checked,brightness:Number($('videoBrightness').value)||0,contrast:(Number($('videoContrast').value)||100)/100,gamma:(Number($('videoGamma').value)||100)/100};}
+$('videoFilter').onchange=()=>{
+  const presets={natural:[0,100,100],lowlight:[15,110,65],bright:[-10,150,110],mono:[0,120,100],silhouette:[0,150,100],edges:[0,120,100]};
+  const preset=presets[$('videoFilter').value]||presets.natural;
+  $('videoBrightness').value=String(preset[0]);$('videoContrast').value=String(preset[1]);$('videoGamma').value=String(preset[2]);$('autoExposure').checked=true;
+};
 async function sendCamera(){
   if(!cameraStream||busy||state.mode!=='VIDEO'||cameraSession!==revision){if(!cameraStarting)stopCameraLocal();return;}
   const started=Date.now(),video=$('cameraFeed'),raster=$('videoRaster'),rc=raster.getContext('2d');
   try{
     if(video.videoWidth&&video.videoHeight){
       const side=Math.min(video.videoWidth,video.videoHeight);rc.drawImage(video,(video.videoWidth-side)/2,(video.videoHeight-side)/2,side,side,0,0,24,24);
-      const pixels=rasterHex(rc.getImageData(0,0,24,24).data,$('mirrorVideo').checked);
+      const image=rc.getImageData(0,0,24,24);const filtered=filterRaster(image.data,videoSettings());
+      if($('mirrorVideo').checked){for(let y=0;y<24;y++)for(let x=0;x<24;x++){const dst=(y*24+x)*4,src=(y*24+23-x)*4;for(let c=0;c<4;c++)image.data[dst+c]=filtered[src+c];}}
+      else image.data.set(filtered);
+      rc.putImageData(image,0,0);
+      const pixels=rasterHex(filtered,$('mirrorVideo').checked);
       await requestSerial('/api/video/frame',{owner:cameraOwner,pixels});
       $('videoStatus').textContent='Live 24 × 24 raster — cap confirmed. USB transfer determines the actual update rate.';
     }
@@ -124,5 +213,5 @@ async function sendTaps(){
   try{const response=await api('/api/tug/tap',{player:tugPlayer,seq:tugSeq,count});tugState=response.game;renderEffects();}catch(e){tugTaps=0;$('tugStatus').textContent=e.message;}finally{tugSending=false;}
 }
 setInterval(pollTug,500);setInterval(sendTaps,160);
-document.addEventListener('visibilitychange',()=>{if(document.hidden){stopCameraLocal();plasmaTouches.clear();queuePlasma();if(tiltEnabled){window.removeEventListener('deviceorientation',orientation);tiltEnabled=false;}}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){stopCameraLocal();plasmaTouches.clear();queuePlasma();if(tiltEnabled){stopTilt();tiltMessage('Tilt paused while the page is hidden. Tap Enable tilt to resume.');}}});
 previewPlasma();renderEffects();
