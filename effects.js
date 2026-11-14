@@ -29,7 +29,7 @@ function tiltMessage(message){$('sandStatus').textContent=message;$('drawingTilt
 function tiltDiagnostics(ack){
   if(ack)lastGravityAck=ack;
   const seen=lastSampleAt?Math.max(0,Math.round((Date.now()-lastSampleAt)/1000)):null;
-  $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation')+' · Due: '+(state.device_gravity?state.device_gravity.x+', '+state.device_gravity.y:'not yet reported')+' · controller: '+(gravityOwner?'this page':state.gravity_source?'another page ('+state.gravity_source+')':'none');
+  $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · calculated: '+(latestForce?latestForce.x+', '+latestForce.y:'none')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation')+' · Due: '+(state.device_gravity?state.device_gravity.x+', '+state.device_gravity.y:'not yet reported')+' · controller: '+(gravityOwner?'this page':state.gravity_source?'another page ('+state.gravity_source+')':'none');
 }
 function stopTilt(){
   tiltEnabled=false;if(sensorUnsubscribe)sensorUnsubscribe();sensorUnsubscribe=null;
@@ -70,7 +70,8 @@ async function startPhoneSensors(){
     if(sample.motion.events!==motionSeen){motionSeen=sample.motion.events;if(motionSeen)motion({accelerationIncludingGravity:sample.motion.gravity});}
     if(sample.orientation.events!==orientationSeen){orientationSeen=sample.orientation.events;if(orientationSeen)orientation(sample.orientation);}
   });
-  tiltMessage('Motion permission allowed. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
+  tiltMessage(lastSampleAt?'Phone tilt connected. Sending gravity to the cap…':'Phone tilt connected. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
+  await flushGravity();
   sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. Open Raw phone sensors below: event counts distinguish missing browser data from cap control. Use Test phone sensors or the standalone sensor test.');},5000);
 }
 async function flushGravity(){
@@ -79,7 +80,15 @@ async function flushGravity(){
   try{const result=await requestSerial('/api/sand/gravity',{...value,owner:gravityOwner});if(result.device_gravity)state.device_gravity=result.device_gravity;if(session===revision){tiltDiagnostics(value.x+', '+value.y+' confirmed');tiltMessage(tiltEnabled?(lastSampleAt?'Tilt active — cap gravity confirmed. Tip the phone; Calibrate sets neutral.':'Manual gravity confirmed; still waiting for sensor readings.'):'Manual gravity confirmed.');}}
   catch(e){if(session===revision){stopTilt();tiltMessage(describeError(e));}}finally{gravitySending=false;}
 }
-$('startSand').onclick=()=>action('/api/sand/start',{},'Sand ready. Enable tilt or use the gravity sliders.');
+$('startSand').onclick=async()=>{
+  if(busy)return;
+  // Native permission calls must begin in this tap, before USB/network waits.
+  let sensorError=null;try{await requestPhoneSensors();}catch(e){sensorError=e;}
+  await action('/api/sand/start',{},'Sand ready. Connecting phone tilt…');
+  if(state.mode!=='SAND')return;
+  if(sensorError){tiltMessage('Sand ready. '+sensorError.message+' Manual sliders remain available.');return;}
+  try{await startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);tiltDiagnostics();}
+};
 $('enableTilt').onclick=async()=>{try{await requestPhoneSensors();await startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);tiltDiagnostics();renderEffects();}};
 $('animateDrawing').onclick=async()=>{
   if(busy||melting)return;
@@ -93,7 +102,7 @@ $('animateDrawing').onclick=async()=>{
     if(state.mode==='PARTICLES'){if(!sensorError)await startPhoneSensors();else tiltMessage('Drawing particles are ready. '+sensorError.message);}
   }finally{melting=false;}
 };
-$('tiltSource').onchange=()=>{lastMotion=null;lastSampleAt=0;latestForce=null;gravityWanted=null;tiltMessage('Tilt source changed. Waiting for a fresh sensor reading.');};
+$('tiltSource').onchange=async()=>{if(tiltEnabled){try{await requestPhoneSensors();await startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);}}else tiltMessage('Tilt source selected. Tap Enable tilt / take control to apply it.');};
 $('calibrateTilt').onclick=()=>{
   if(lastTilt)tiltZero={...lastTilt};if(lastMotion)motionZero={...lastMotion};
   if(lastMotion&&Date.now()-motionAt<1500)forceInScreen(0,0);else if(lastTilt)orientation(lastTilt);

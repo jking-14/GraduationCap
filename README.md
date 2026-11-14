@@ -193,3 +193,8 @@ Sensor listeners attach before permission is requested and remain active across 
 
 
 If the secure phone page reports an unrecognized address, close the old bridge window, restart `start-secure-windows.bat`, and use the newly printed complete SECURE PHONE link. Quick-tunnel links change after restarting. This version pins cloudflared's local Host header and accepts the registered HTTPS address with or without its default :443 port. Pairing keys remain required for commands.
+
+
+### Sand tilt control
+
+Start / reset sand now requests phone access and enables tilt forwarding in one tap. The default source is Orientation angles, using beta/gamma directly. The separate raw sensor tests only inspect the phone and do not control the cap. If you move a manual slider, it takes over; tap Enable tilt / take control to return to phone input. The diagnostic line shows calculated x/y, the acknowledged command, and the Due's reported gravity. Source changes while tilt is active reconnect that source immediately.
