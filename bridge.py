@@ -308,16 +308,24 @@ class Handler(BaseHTTPRequestHandler):
     def allowed(self):
         host=self.headers.get("Host","")
         origin=self.headers.get("Origin")
-        local_proxy=self.client_address[0] in {"127.0.0.1","::1"}
+        # cloudflared connects locally; forwarded headers are not trusted.
+        local_proxy=self.client_address[0] in {"127.0.0.1","::1","::ffff:127.0.0.1"}
+        def authority(value, scheme):
+            parsed=urllib.parse.urlsplit(scheme+"://"+value)
+            if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+                raise ValueError("Invalid authority")
+            return parsed.hostname, parsed.port or (443 if scheme=="https" else 80)
         try:
-            parsed=urllib.parse.urlsplit("http://"+host)
-            local=parsed.hostname in self.server.allowed_hosts and parsed.port==self.server.server_port
+            local=authority(host,"http") in {(name,self.server.server_port) for name in self.server.allowed_hosts}
             public=self.server.public_origin
-            public_host=bool(public and local_proxy and host==urllib.parse.urlsplit(public).netloc)
+            public_host=bool(public and local_proxy and authority(host,"https")==authority(urllib.parse.urlsplit(public).netloc,"https"))
             if not local and not public_host:return False
-            allowed_origins={"http://"+host}
-            if public and local_proxy:allowed_origins.add(public)
-            return not origin or origin in allowed_origins
+            if not origin:return True
+            parsed_origin=urllib.parse.urlsplit(origin)
+            if parsed_origin.path or parsed_origin.query or parsed_origin.fragment:return False
+            if parsed_origin.scheme=="http" and local:
+                return authority(parsed_origin.netloc,"http")==authority(host,"http")
+            return bool(public and local_proxy and parsed_origin.scheme=="https" and authority(parsed_origin.netloc,"https")==authority(urllib.parse.urlsplit(public).netloc,"https"))
         except ValueError:return False
 
     def authenticated(self):
@@ -325,7 +333,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if not self.allowed():
-            self.send(403, {"error": "Open the local address printed by the bridge."}); return
+            self.send(403, {"error": "Address not recognized. Restart the secure launcher and open its latest complete SECURE PHONE link."}); return
         path = urllib.parse.urlsplit(self.path).path
         if path == "/sensor-test":
             self.send(200,(WEB / "sensor-test.html").read_bytes(),"text/html; charset=utf-8"); return

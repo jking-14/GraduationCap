@@ -190,3 +190,6 @@ This update changes the controller only; no new firmware upload is required if C
 Open **Raw iPhone readings** and tap **Test phone sensors**. Motion and orientation event counts and raw values remain visible even without a connected cap. Permission being granted is shown separately from actual readings. The **standalone sensor test** link runs the same capture without the controller or serial connection; it also lets you request Motion only or Orientation only. If values never arrive, tap **Copy report** and send that report for diagnosis. It contains no pairing key.
 
 Sensor listeners attach before permission is requested and remain active across animation changes. Valid x/y gravity readings are accepted even if z is absent. Raw null readings are counted and shown rather than silently discarded. To move sand or drawn particles, start that mode and tap Enable tilt; the raw test alone does not take control of the cap.
+
+
+If the secure phone page reports an unrecognized address, close the old bridge window, restart `start-secure-windows.bat`, and use the newly printed complete SECURE PHONE link. Quick-tunnel links change after restarting. This version pins cloudflared's local Host header and accepts the registered HTTPS address with or without its default :443 port. Pairing keys remain required for commands.
