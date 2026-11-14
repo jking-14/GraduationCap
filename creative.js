@@ -15,9 +15,9 @@ function renderCreative(){
   document.querySelectorAll('[data-direction]').forEach(b=>b.disabled=!playing||state.animation!==13);
   document.querySelectorAll('[data-game]').forEach(b=>b.classList.toggle('active',playing&&Number(b.dataset.game)===state.animation));
   const help={
-    3:'Move the slider to keep the ball in play. Breakout’s paddle direction is now inverted.',
+    3:'Move the slider to keep the ball in play. The slider uses the same left/right frame as drawing.',
     6:'You control the red paddle against the blue computer paddle. Move the slider while watching the cap.',
-    13:'Use arrows or swipe. Left/right have been flipped, with the earlier up/down inversion preserved. Avoid walls and your body.',
+    13:'Use arrows or swipe. Directions follow the same top/bottom and left/right frame as drawing. Avoid walls and your body.',
     14:'Move your ship with the slider and tap Fire to shoot. Clear the aliens and dodge their shots.',
     16:'The scene scrolls automatically. Tap Jump to clear gaps, platforms and enemies. New runs start after a fall.'
   };

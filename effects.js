@@ -1,6 +1,6 @@
 'use strict';
 let tiltEnabled=false,lastTilt=null,lastMotion=null,lastSampleAt=0,motionAt=0,sensorSource="none",sensorTimer=null;
-let tiltZero={beta:0,gamma:0},motionZero={x:0,y:0},latestForce=null,gravityWanted=null,gravitySending=false,lastGravityAck=null,melting=false;
+let tiltZero={beta:0,gamma:0},motionZero={x:0,y:0},latestForce=null,gravityWanted=null,gravitySending=false,lastGravityAck=null,melting=false,gravityOwner=null,manualGravityActive=false,gravityClaiming=false;
 const plasmaCanvas=$('plasmaCanvas'),plasmaCtx=plasmaCanvas.getContext('2d'),plasmaTouches=new Map();
 let plasmaWanted=null,plasmaSending=false;
 let cameraStream=null,cameraOwner=null,cameraStarting=false,cameraSession=0,cameraTimer=null;
@@ -11,7 +11,7 @@ function savePlayer(){try{sessionStorage.setItem('cap-tug-player',tugPlayer);ses
 function renderEffects(){
   const connected=reachable&&state.connected&&!busy;
   $('enableTilt').disabled=!connected||!['SAND','PARTICLES'].includes(state.mode);$('calibrateTilt').disabled=!tiltEnabled;
-  if(!['SAND','PARTICLES'].includes(state.mode)&&tiltEnabled)stopTilt();
+  if(!['SAND','PARTICLES'].includes(state.mode)&&(tiltEnabled||manualGravityActive||gravityOwner))stopTilt();
   $('calibrateTilt').disabled=!tiltEnabled;
   if(state.mode!=='PLASMA'){plasmaTouches.clear();plasmaWanted=null;}
   if(cameraStream&&!cameraStarting&&(state.mode!=='VIDEO'||cameraSession!==revision))stopCameraLocal();
@@ -29,11 +29,11 @@ function tiltMessage(message){$('sandStatus').textContent=message;$('drawingTilt
 function tiltDiagnostics(ack){
   if(ack)lastGravityAck=ack;
   const seen=lastSampleAt?Math.max(0,Math.round((Date.now()-lastSampleAt)/1000)):null;
-  $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation');
+  $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation')+' · Due: '+(state.device_gravity?state.device_gravity.x+', '+state.device_gravity.y:'not yet reported')+' · controller: '+(gravityOwner?'this page':state.gravity_source?'another page ('+state.gravity_source+')':'none');
 }
 function stopTilt(){
   tiltEnabled=false;window.removeEventListener('deviceorientation',orientation);window.removeEventListener('devicemotion',motion);
-  if(sensorTimer)clearTimeout(sensorTimer);sensorTimer=null;gravityWanted=null;latestForce=null;
+  if(sensorTimer)clearTimeout(sensorTimer);sensorTimer=null;gravityWanted=null;latestForce=null;gravityOwner=null;manualGravityActive=false;
 }
 function forceInScreen(x,y){
   const angle=((screen.orientation&&screen.orientation.angle)||window.orientation||0)*Math.PI/180;
@@ -43,6 +43,7 @@ function forceInScreen(x,y){
 }
 function motion(event){
   const a=event.accelerationIncludingGravity;
+  if($('tiltSource').value==='orientation')return;
   if(!a||!Number.isFinite(a.x)||!Number.isFinite(a.y)||!Number.isFinite(a.z)||Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z)<.01)return;
   lastMotion={x:-a.x,y:a.y};motionAt=Date.now();lastSampleAt=motionAt;sensorSource='gravity sensor';
   forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);
@@ -50,7 +51,7 @@ function motion(event){
 function orientation(event){
   if(!Number.isFinite(event.beta)||!Number.isFinite(event.gamma))return;
   lastTilt={beta:event.beta,gamma:event.gamma};
-  if(lastMotion&&Date.now()-motionAt<1500)return;
+  if($('tiltSource').value==='gravity'||($('tiltSource').value!=='orientation'&&lastMotion&&Date.now()-motionAt<1500))return;
   lastSampleAt=Date.now();sensorSource='orientation fallback';
   forceInScreen(Math.sin((event.gamma-tiltZero.gamma)*Math.PI/180)*100,Math.sin((event.beta-tiltZero.beta)*Math.PI/180)*100);
 }
@@ -63,20 +64,22 @@ async function requestPhoneSensors(){
   const results=await Promise.allSettled(requests);
   if(requests.length&&!results.some(r=>r.status==='fulfilled'&&r.value==='granted'))throw new Error('Motion permission was denied. Allow Motion & Orientation for this site in Safari, then tap Enable tilt again.');
 }
-function startPhoneSensors(){
-  stopTilt();lastGravityAck=null;lastTilt=null;lastMotion=null;lastSampleAt=0;motionAt=0;tiltEnabled=true;
+async function startPhoneSensors(){
+  stopTilt();
+  const claim=await api('/api/tilt/claim',{client:visitor,kind:'sensor'});gravityOwner=claim.owner;
+  lastGravityAck=null;lastTilt=null;lastMotion=null;lastSampleAt=0;motionAt=0;tiltEnabled=true;
   window.addEventListener('devicemotion',motion);window.addEventListener('deviceorientation',orientation);
   tiltMessage('Motion permission allowed. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
   sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. Open the SECURE PHONE link in Safari and check Motion & Orientation permission, or use the sliders.');},5000);
 }
 async function flushGravity(){
-  if(gravitySending||busy||!reachable||!['SAND','PARTICLES'].includes(state.mode)||!gravityWanted)return;
+  if(gravitySending||busy||!reachable||!gravityOwner||!['SAND','PARTICLES'].includes(state.mode)||!gravityWanted)return;
   gravitySending=true;const value=gravityWanted;gravityWanted=null;const session=revision;
-  try{await requestSerial('/api/sand/gravity',value);if(session===revision){tiltDiagnostics(value.x+', '+value.y+' confirmed');tiltMessage(tiltEnabled?(lastSampleAt?'Tilt active — cap gravity confirmed. Tip the phone; Calibrate sets neutral.':'Manual gravity confirmed; still waiting for sensor readings.'):'Manual gravity confirmed.');}}
-  catch(e){if(session===revision)tiltMessage(describeError(e));}finally{gravitySending=false;}
+  try{const result=await requestSerial('/api/sand/gravity',{...value,owner:gravityOwner});if(result.device_gravity)state.device_gravity=result.device_gravity;if(session===revision){tiltDiagnostics(value.x+', '+value.y+' confirmed');tiltMessage(tiltEnabled?(lastSampleAt?'Tilt active — cap gravity confirmed. Tip the phone; Calibrate sets neutral.':'Manual gravity confirmed; still waiting for sensor readings.'):'Manual gravity confirmed.');}}
+  catch(e){if(session===revision){stopTilt();tiltMessage(describeError(e));}}finally{gravitySending=false;}
 }
 $('startSand').onclick=()=>action('/api/sand/start',{},'Sand ready. Enable tilt or use the gravity sliders.');
-$('enableTilt').onclick=async()=>{try{await requestPhoneSensors();startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);tiltDiagnostics();renderEffects();}};
+$('enableTilt').onclick=async()=>{try{await requestPhoneSensors();await startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);tiltDiagnostics();renderEffects();}};
 $('animateDrawing').onclick=async()=>{
   if(busy||melting)return;
   const count=pixels.filter(color=>color!=='000000').length;
@@ -86,19 +89,29 @@ $('animateDrawing').onclick=async()=>{
   try{
     let sensorError=null;try{await requestPhoneSensors();}catch(e){sensorError=e;}
     await action('/api/draw/particles',{pixels:pixels.join('')},'Your drawing is now loose particles. Show drawing restores the original.');
-    if(state.mode==='PARTICLES'){if(!sensorError)startPhoneSensors();else tiltMessage('Drawing particles are ready. '+sensorError.message);}
+    if(state.mode==='PARTICLES'){if(!sensorError)await startPhoneSensors();else tiltMessage('Drawing particles are ready. '+sensorError.message);}
   }finally{melting=false;}
 };
+$('tiltSource').onchange=()=>{lastMotion=null;lastSampleAt=0;latestForce=null;gravityWanted=null;tiltMessage('Tilt source changed. Waiting for a fresh sensor reading.');};
 $('calibrateTilt').onclick=()=>{
   if(lastTilt)tiltZero={...lastTilt};if(lastMotion)motionZero={...lastMotion};
   if(lastMotion&&Date.now()-motionAt<1500)forceInScreen(0,0);else if(lastTilt)orientation(lastTilt);
 };
 $('invertTilt').onchange=()=>{if(lastMotion&&Date.now()-motionAt<1500)forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);else if(lastTilt)orientation(lastTilt);};
-for(const id of ['gravityX','gravityY'])$(id).addEventListener('input',()=>{stopTilt();gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};flushGravity();});
+async function manualGravity(){
+  if(!['SAND','PARTICLES'].includes(state.mode)||gravityClaiming)return;
+  if(!manualGravityActive||!gravityOwner){
+    stopTilt();gravityClaiming=true;
+    try{const claim=await api('/api/tilt/claim',{client:visitor,kind:'manual'});gravityOwner=claim.owner;manualGravityActive=true;}
+    catch(e){tiltMessage(describeError(e));return;}finally{gravityClaiming=false;}
+  }
+  gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};flushGravity();
+}
+for(const id of ['gravityX','gravityY'])$(id).addEventListener('input',manualGravity);
 setInterval(()=>{
   if(document.hidden||!['SAND','PARTICLES'].includes(state.mode))return;
   if(tiltEnabled&&latestForce)gravityWanted={...latestForce};
-  else if(!tiltEnabled)gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};
+  else if(manualGravityActive&&gravityOwner)gravityWanted={x:Number($('gravityX').value),y:Number($('gravityY').value)};
   flushGravity();
 },180);
 function plasmaPoint(e){const b=plasmaCanvas.getBoundingClientRect();return{x:Math.max(0,Math.min(23,Math.floor((e.clientX-b.left)*24/b.width))),y:Math.max(0,Math.min(23,Math.floor((e.clientY-b.top)*24/b.height)))};}
@@ -126,8 +139,8 @@ function stopCameraLocal(){
   $('cameraFeed').srcObject=null;$('stopVideo').disabled=true;
 }
 function rasterHex(data,mirror=false){
-  // Reverse 180 degrees before transmission to compensate the cap's scene turn.
-  let hex='';for(let y=23;y>=0;y--)for(let x=23;x>=0;x--){const i=(y*24+(mirror?23-x:x))*4;for(let c=0;c<3;c++)hex+=data[i+c].toString(16).padStart(2,'0');}return hex;
+  // Same row-major logical coordinates as drawing; the firmware turns it once.
+  let hex='';for(let y=0;y<24;y++)for(let x=0;x<24;x++){const i=(y*24+(mirror?23-x:x))*4;for(let c=0;c<3;c++)hex+=data[i+c].toString(16).padStart(2,'0');}return hex;
 }
 function filterRaster(data,options={}){
   const mode=options.mode||'natural',brightness=Number(options.brightness)||0,contrast=Number(options.contrast)||1,gamma=Number(options.gamma)||1;

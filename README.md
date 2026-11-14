@@ -6,9 +6,9 @@ A local Python-to-USB bridge for Jason’s 24×24 Arduino Due cap. It serves a p
 
 ## Updating to this release
 
-Upload `firmware/gradCap2026/gradCap2026.ino` again, replace the bridge folder, restart the bridge, and open its new full Phone link. This release uses **CAP/6** and requires the included firmware. Older firmware is rejected with an update message.
+Upload `firmware/gradCap2026/gradCap2026.ino` again, replace the bridge folder, restart the bridge, and open its new full Phone link. This release uses **CAP/7** and requires the included firmware. Older firmware is rejected with an update message.
 
-Manual Pac-Man control has been removed. The automatic Pac-Man animation remains in both playlists. The pond’s on-screen preview now stays under your finger; the actual LED ripple origin is corrected in firmware. Pong and Snake keep their most recently requested control inversions.
+Manual Pac-Man control has been removed. The automatic Pac-Man animation remains in both playlists. All display and input coordinates now follow the frame already used by Platformer, Underwater and drawing. Extra turns in touch input and camera frames were removed. Drawing’s pixel output is unchanged.
 
 ## 1. Upload the firmware
 
@@ -66,13 +66,17 @@ python3 -m venv .venv
 
 Omit `--tunnel` for local-only operation. Optional arguments: `--port 8766` if the default port is busy, or `--serial COM5` (use your actual serial device) to connect automatically.
 
+## One orientation for the whole cap
+
+Platformer, Underwater and the drawing canvas define the reference: x=0 is reference-left, y=0 is reference-top, and y=23 is reference-bottom. Every animation and interaction uses the same final hardware mapping. Plasma contacts, pond touches, video pixels and gravity vectors are supplied directly in this frame, without an extra 180-degree turn. Breakout’s older inverted row coordinates are normalized before display so its paddle stays at the reference bottom. Game controls use this common frame too. The drawing output you already tested is preserved.
+
 ## Sand
 
 Click Start / reset sand. The Due simulates 140 grains with collisions and piling against the matrix edges. Click Enable tilt on the HTTPS phone page and allow motion access. Tilt changes the gravity direction; Calibrate level sets your current angle as neutral. Invert tilt flips both axes if your phone/viewing position needs it. Portrait and landscape orientation are accounted for.
 
-Manual gravity sliders work without sensor permission. If the phone stops sending gravity for two seconds, the grains settle toward screen-down. Reset sand restarts the grains. Tilt now prefers the iPhone’s `devicemotion` gravity readings and falls back to `deviceorientation` when needed. Both permission requests are initiated during your Enable tilt tap, before any network request. Open the HTTPS link directly in Safari, allow Motion & Orientation, then tip the phone. Flat, neutral input can produce zero in-plane gravity; calibrate only when you want the current holding angle to be neutral.
+Manual gravity sliders work without sensor permission. Only the page that explicitly enables tilt or moves a gravity slider owns gravity control. Other open pages are observers and do not send a default force. Enabling tilt or moving a slider on another page transfers control; the previous owner stops sending when its token is rejected. If the phone stops sending gravity for two seconds, the grains settle toward screen-down. Reset sand restarts the grains. Tilt now prefers the iPhone’s `devicemotion` gravity readings and falls back to `deviceorientation` when needed. Both permission requests are initiated during your Enable tilt tap, before any network request. Open the HTTPS link directly in Safari, allow Motion & Orientation, then tip the phone. Flat, neutral input can produce zero in-plane gravity; calibrate only when you want the current holding angle to be neutral.
 
-The **Sensors / cap gravity** line distinguishes real sensor readings from permission alone and shows the last acknowledged gravity vector. If permission is allowed but no reading arrives for five seconds, the page says so. A successful vector acknowledgment verifies the phone → bridge → Due path. Use Invert tilt if your viewing orientation needs both axes reversed. Manual slider directions are refreshed continuously rather than expiring after two seconds. No physical sensor is added to the cap.
+The **Sensors / cap gravity** line distinguishes real sensor readings from permission alone and shows the last acknowledged gravity vector. If permission is allowed but no reading arrives for five seconds, the page says so. A successful vector acknowledgment verifies the phone → bridge → Due path. The Due also reports its actual applied vector, shown separately in the indicator. If Auto receives unhelpful readings on your phone, select Gravity sensor or Orientation angles using Tilt source. Use Invert tilt if your viewing orientation needs both axes reversed. Manual slider directions are refreshed continuously rather than expiring after two seconds. No physical sensor is added to the cap.
 
 ## Plasma globe
 
@@ -101,7 +105,7 @@ Leave seat frees your spot. A player who disappears for more than 15 seconds dur
 
 ## Touch pond and drawing
 
-- **Start touch pond:** tap/drag to create up to eight overlapping blue-green rings. The preview follows the finger without a flip. The actual LED origin is rotated in firmware, independently of the phone preview. The ordinary Pond Ripples animation in the playlists stays automatic.
+- **Start touch pond:** tap/drag to create up to eight overlapping blue-green rings. The preview and actual LED origin both use the drawing/platformer reference frame. The ordinary Pond Ripples animation in the playlists stays automatic.
 - **Draw on your cap:** draw on the 24×24 canvas, choose a color, or erase. Click Show drawing to enter drawing mode. With Live checked, new strokes update the cap. Drawings save locally in that browser when a stroke finishes. If a transfer fails, Show drawing resends the full canvas.
 
 ### Turn a drawing into tilt particles
@@ -116,9 +120,9 @@ Preview feedback is immediate. A confirmation message means the Due acknowledged
 
 Choose games under Your turn for manual control. The corresponding animation buttons still run their automatic versions.
 
-- Pong: slider controls the red paddle against the blue computer paddle; current horizontal inversion preserved.
-- Breakout: slider controls the paddle; earlier inversion preserved.
-- Snake: arrows/swipes, with the current horizontal and vertical inversions preserved.
+- Pong: slider controls the red paddle against the blue computer paddle in the common cap frame.
+- Breakout: slider controls the bottom paddle in the common cap frame.
+- Snake: arrows/swipes use the common cap frame.
 - Platformer: automatic runner with a manual Jump button.
 - Space Invaders: ship slider and Fire button; automatic aiming/dodging/firing are disabled in manual mode.
 
@@ -132,7 +136,7 @@ The connection section keeps Bridge link or pairing key, Update and Retry availa
 | --- | --- |
 | No serial ports | Data cable, USB reconnection, correct port in Arduino IDE, refresh port list. |
 | Port cannot open | Close Serial Monitor/Plotter and other apps using it. Check serial-device permissions on Linux. |
-| Cap does not acknowledge | Upload the included CAP/6 firmware and match Programming vs Native USB. |
+| Cap does not acknowledge | Upload the included CAP/7 firmware and match Programming vs Native USB. |
 | Phone cannot open local link | Same Wi-Fi, actual Wi-Fi IPv4 address, private-network firewall permission for Python, no guest-network client isolation/VPN conflict. |
 | Camera/tilt unavailable | Use SECURE PHONE HTTPS link in Safari; allow the website’s camera/motion permission. Sliders remain available for sand. |
 | Secure link never appears | Install cloudflared, check internet, and use the secure launcher or --tunnel. The computer window must stay open. |
@@ -156,14 +160,14 @@ ASAN_OPTIONS=detect_leaks=0 /tmp/cap-firmware-test
 
 Checks use simulated USB and host FastLED/serial stand-ins. They cover bridge routing, seats/timing/replay, frame ownership, UI recovery and feature requests, drawing/coordinate bounds, grain conservation, plasma targets, and interruption of all playlist scenes. They do not verify physical USB/LED timing, an Arduino Due build/upload, actual Safari sensor/camera permission, or a real external HTTPS tunnel. Browser rendering is unverified because Chromium startup is blocked in this workspace.
 
-## Protocol CAP/6
+## Protocol CAP/7
 
-ASCII, newline-terminated at 115200 baud. Request IDs are positive decimal numbers up to nine digits. `ACK id message` confirms acceptance; `ERR id reason` rejects it. `STATE mode animationId` precedes status/transition acknowledgments. `PING id` replies `PONG CAP/6`; STATUS also reports current state.
+ASCII, newline-terminated at 115200 baud. Request IDs are positive decimal numbers up to nine digits. `ACK id message` confirms acceptance; `ERR id reason` rejects it. `STATE mode animationId` precedes status/transition acknowledgments. `PING id` replies `PONG CAP/7`; STATUS also reports current state.
 
 - PLAY id animationId; MODE id DEMO or CEREMONY; OFF id.
 - GAME id gameId (3, 6, 13, 14, 16); INPUT id P0..P23 / UP / DOWN / LEFT / RIGHT / JUMP / FIRE, as applicable.
 - DRAW id; PIX id x,y,rrggbb; ROW id row,144HexCharacters; SHOW id; CLEAR id. VIDEO mode also accepts pixel/row/show commands. The bridge sends 24 rows and SHOW per video frame.
-- TOUCH id; WAVE id x,y. WAVE rotates the actual origin by 180 degrees in firmware; the phone preview is not mirrored.
+- TOUCH id; WAVE id x,y. WAVE uses the same logical frame as drawing, with no extra turn.
 - SAND id; GRAV id x,y (each -100..100). GRAV also controls drawing-particle mode.
 - MELT id converts the staged drawing to PARTICLES mode, preserving occupied pixels’ colors. HTTP `/api/draw/particles` stages the full drawing before MELT.
 - PLASM id; BOLTS id x,y;x,y (up to five points), or BOLTS id - to release all touches.
@@ -171,3 +175,9 @@ ASCII, newline-terminated at 115200 baud. Request IDs are positive decimal numbe
 - TUG id; ROPE id score,phase (-40..40; 0 waiting, 1 countdown, 2 playing, 3 red win, 4 blue win, 5 draw). The bridge computes the score and round state.
 
 Sand, plasma, video and tug are interactive modes, not extra automatic playlist entries. There remain 25 animations.
+
+### Gravity control ownership and diagnosis
+
+`POST /api/tilt/claim` with a browser identity and `kind` (`sensor` or `manual`) transfers gravity control to that page and returns an owner token. Each `/api/sand/gravity` call includes that token. An old token, missing token or expired lease is rejected; merely viewing a page never changes gravity. Active control renews its eight-second lease. The firmware still falls back to reference-down if updates stop for two seconds.
+
+The firmware emits `GRAVITY x y` before each gravity acknowledgment and in particle-mode status. The bridge exposes `device_gravity` and controller kind in status, letting you distinguish permission granted, sensor samples arriving, commands acknowledged, and force actually applied. The sand simulation now weights both axes, so a small sideways force can move a pile even when downward force is larger.

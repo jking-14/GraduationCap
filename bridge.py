@@ -49,6 +49,11 @@ class CapBridge:
         self.animation = -1
         self.last_ack = None
         self.error = None
+        self.gravity_owner=None
+        self.gravity_client=None
+        self.gravity_seen=0
+        self.gravity_source=None
+        self.device_gravity=None
         self.video_owner=None
         self.video_seen=0
 
@@ -62,7 +67,9 @@ class CapBridge:
                 "port_open": self.serial is not None, "port": self.port,
                 "mode": self.mode, "animation": self.animation,
                 "animation_name": ANIMATIONS[self.animation] if 0 <= self.animation < len(ANIMATIONS) else None,
-                "last_ack": self.last_ack, "error": self.error}
+                "last_ack": self.last_ack, "error": self.error,
+                "gravity_source":self.gravity_source if time.monotonic()-self.gravity_seen<8 else None,
+                "device_gravity":self.device_gravity}
 
     def _disconnect(self):
         with self.lock:
@@ -73,6 +80,11 @@ class CapBridge:
             self.port = None
             self.mode = None
             self.animation = -1
+            self.gravity_owner=None
+            self.gravity_client=None
+            self.gravity_source=None
+            self.gravity_seen=0
+            self.device_gravity=None
             self.last_ack = None
             self.last_seen = 0
             for event, reply in self.pending.values():
@@ -108,7 +120,7 @@ class CapBridge:
                 while time.monotonic() < deadline:
                     try:
                         response = self.command("PING", timeout=0.8, require_ready=False)
-                        if response != "PONG CAP/6":
+                        if response != "PONG CAP/7":
                             raise RuntimeError("Different firmware: upload the included gradCap2026 sketch.")
                         with self.lock:
                             self.ready = True
@@ -148,6 +160,12 @@ class CapBridge:
             if generation != self.generation:
                 return
             parts = line.split()
+            if len(parts)==3 and parts[0]=="GRAVITY":
+                try:
+                    x,y=int(parts[1]),int(parts[2])
+                    if -100<=x<=100 and -100<=y<=100:self.device_gravity={"x":x,"y":y}
+                except ValueError:pass
+                return
             if len(parts) == 3 and parts[0] == "STATE" and parts[1] in {"MANUAL", "DEMO", "CEREMONY", "OFF", "DRAW", "GAME", "RIPPLE", "SAND", "PLASMA", "VIDEO", "TUG", "PARTICLES"}:
                 try:
                     animation = int(parts[2])
@@ -216,7 +234,7 @@ class CapBridge:
                 if generation != self.generation or not self.ready:
                     return
             try:
-                if self.command("PING") != "PONG CAP/6":
+                if self.command("PING") != "PONG CAP/7":
                     raise RuntimeError("Unexpected firmware response")
             except (RuntimeError, TimeoutError) as exc:
                 self._fail(generation, str(exc))
@@ -367,10 +385,20 @@ class Handler(BaseHTTPRequestHandler):
                 reply = bridge.command("PLAY", animation)
             elif path == "/api/sand/start":
                 reply=bridge.command("SAND")
+            elif path == "/api/tilt/claim":
+                client,kind=data.get("client"),data.get("kind")
+                if not isinstance(client,str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}",client) or not isinstance(kind,str) or kind not in {"sensor","manual"}:raise ValueError("Invalid gravity controller")
+                if bridge.status()["mode"] not in {"SAND","PARTICLES"}:raise ValueError("Start sand or drawing particles first")
+                bridge.gravity_owner=secrets.token_urlsafe(24);bridge.gravity_client=client;bridge.gravity_source=kind;bridge.gravity_seen=time.monotonic()
+                self.send(200,{"owner":bridge.gravity_owner});return
             elif path == "/api/sand/gravity":
                 x,y=data.get("x"),data.get("y")
                 if type(x) is not int or type(y) is not int or not -100<=x<=100 or not -100<=y<=100:raise ValueError("Gravity must be between -100 and 100")
-                reply=bridge.command("GRAV",f"{x},{y}")
+                owner=data.get("owner")
+                if not isinstance(owner,str) or not bridge.gravity_owner or not secrets.compare_digest(owner.encode(),bridge.gravity_owner.encode()) or time.monotonic()-bridge.gravity_seen>8:
+                    raise ValueError("Gravity control belongs to another page or expired. Tap Enable tilt or move a gravity slider to take control.")
+                reply=bridge.command("GRAV",f"{x},{y}");bridge.gravity_seen=time.monotonic()
+                extra_result["device_gravity"]=bridge.device_gravity
             elif path == "/api/plasma/start":
                 reply=bridge.command("PLASM")
             elif path == "/api/plasma/points":
