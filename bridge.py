@@ -298,6 +298,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Permissions-Policy", "accelerometer=(self), gyroscope=(self), magnetometer=(self)")
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -326,9 +327,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             self.send(403, {"error": "Open the local address printed by the bridge."}); return
         path = urllib.parse.urlsplit(self.path).path
+        if path == "/sensor-test":
+            self.send(200,(WEB / "sensor-test.html").read_bytes(),"text/html; charset=utf-8"); return
         if path == "/":
             self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8"); return
-        if path in {"/app.js", "/creative.js", "/pond.js", "/effects.js", "/style.css"}:
+        if path in {"/app.js", "/creative.js", "/pond.js", "/effects.js", "/sensors.js", "/sensor-test.js", "/style.css"}:
             self.send(200, (WEB / path[1:]).read_bytes(), "text/javascript; charset=utf-8" if path.endswith("js") else "text/css; charset=utf-8"); return
         if not self.authenticated():
             self.send(401, {"error": "Pair this phone using the complete link printed by the bridge."}); return

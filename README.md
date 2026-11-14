@@ -181,3 +181,12 @@ Sand, plasma, video and tug are interactive modes, not extra automatic playlist 
 `POST /api/tilt/claim` with a browser identity and `kind` (`sensor` or `manual`) transfers gravity control to that page and returns an owner token. Each `/api/sand/gravity` call includes that token. An old token, missing token or expired lease is rejected; merely viewing a page never changes gravity. Active control renews its eight-second lease. The firmware still falls back to reference-down if updates stop for two seconds.
 
 The firmware emits `GRAVITY x y` before each gravity acknowledgment and in particle-mode status. The bridge exposes `device_gravity` and controller kind in status, letting you distinguish permission granted, sensor samples arriving, commands acknowledged, and force actually applied. The sand simulation now weights both axes, so a small sideways force can move a pile even when downward force is larger.
+
+
+### iPhone raw sensor diagnosis
+
+This update changes the controller only; no new firmware upload is required if CAP/7 is already installed. Replace the bridge folder, restart the secure launcher, and open its new HTTPS Phone link directly in Safari.
+
+Open **Raw iPhone readings** and tap **Test phone sensors**. Motion and orientation event counts and raw values remain visible even without a connected cap. Permission being granted is shown separately from actual readings. The **standalone sensor test** link runs the same capture without the controller or serial connection; it also lets you request Motion only or Orientation only. If values never arrive, tap **Copy report** and send that report for diagnosis. It contains no pairing key.
+
+Sensor listeners attach before permission is requested and remain active across animation changes. Valid x/y gravity readings are accepted even if z is absent. Raw null readings are counted and shown rather than silently discarded. To move sand or drawn particles, start that mode and tap Enable tilt; the raw test alone does not take control of the cap.
