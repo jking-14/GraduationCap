@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css?v=8">
-  <script src="app.js?v=8" defer></script>
+  <link rel="stylesheet" href="style.css?v=9">
+  <script src="sensors.js?v=9" defer></script>
+  <script src="app.js?v=9" defer></script>
 </head>
 <body>
 <main>
@@ -39,6 +40,10 @@
     <div class="setup-actions"><button id="calibrateTilt" class="secondary">Calibrate level</button><label class="live-label"><input id="invertTilt" type="checkbox"> Invert tilt</label></div>
     <details><summary>Manual gravity controls</summary><label for="gravityX">Left / right</label><input id="gravityX" class="paddle-slider" type="range" min="-100" max="100" value="0"><label for="gravityY">Up / down</label><input id="gravityY" class="paddle-slider" type="range" min="-100" max="100" value="80"></details>
     <label for="tiltSource">Tilt source</label><select id="tiltSource"><option value="auto">Auto (gravity + fallback)</option><option value="gravity">Gravity sensor</option><option value="orientation">Orientation angles</option></select>
+    <details id="rawSensorPanel" open><summary>Raw iPhone readings — independent of cap connection</summary>
+    <div class="setup-actions"><button id="testSensors" class="secondary">Test phone sensors</button><button id="copyRawSensors" class="secondary">Copy report</button></div>
+    <p><a id="standaloneSensors" href="/sensor-test">Open standalone sensor test ↗</a></p>
+    <p id="rawSensorSummary" class="hint" role="status">Waiting for phone sensor test.</p><pre id="rawSensorReport" class="sensor-report" aria-live="off"></pre></details>
     <p id="tiltDiagnostics" class="hint" role="status">Sensors: not enabled · cap gravity: not confirmed</p>
     <p id="sandStatus" class="hint" role="status">Enable tilt after starting sand, or use the gravity sliders.</p>
   </section>
@@ -117,8 +122,8 @@
   </section>
   <footer><button id="off" class="off-button" data-control disabled>Turn LEDs off</button><p>Made for a moment worth celebrating.</p></footer>
 </main>
-<script src="creative.js?v=8" defer></script>
-<script src="pond.js?v=8" defer></script>
-<script src="effects.js?v=8" defer></script>
+<script src="creative.js?v=9" defer></script>
+<script src="pond.js?v=9" defer></script>
+<script src="effects.js?v=9" defer></script>
 </body>
 </html>

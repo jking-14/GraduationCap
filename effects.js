@@ -1,6 +1,6 @@
 'use strict';
 let tiltEnabled=false,lastTilt=null,lastMotion=null,lastSampleAt=0,motionAt=0,sensorSource="none",sensorTimer=null;
-let tiltZero={beta:0,gamma:0},motionZero={x:0,y:0},latestForce=null,gravityWanted=null,gravitySending=false,lastGravityAck=null,melting=false,gravityOwner=null,manualGravityActive=false,gravityClaiming=false;
+let tiltZero={beta:0,gamma:0},motionZero={x:0,y:0},latestForce=null,gravityWanted=null,gravitySending=false,lastGravityAck=null,melting=false,gravityOwner=null,manualGravityActive=false,gravityClaiming=false,sensorUnsubscribe=null;
 const plasmaCanvas=$('plasmaCanvas'),plasmaCtx=plasmaCanvas.getContext('2d'),plasmaTouches=new Map();
 let plasmaWanted=null,plasmaSending=false;
 let cameraStream=null,cameraOwner=null,cameraStarting=false,cameraSession=0,cameraTimer=null;
@@ -32,7 +32,7 @@ function tiltDiagnostics(ack){
   $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation')+' · Due: '+(state.device_gravity?state.device_gravity.x+', '+state.device_gravity.y:'not yet reported')+' · controller: '+(gravityOwner?'this page':state.gravity_source?'another page ('+state.gravity_source+')':'none');
 }
 function stopTilt(){
-  tiltEnabled=false;window.removeEventListener('deviceorientation',orientation);window.removeEventListener('devicemotion',motion);
+  tiltEnabled=false;if(sensorUnsubscribe)sensorUnsubscribe();sensorUnsubscribe=null;
   if(sensorTimer)clearTimeout(sensorTimer);sensorTimer=null;gravityWanted=null;latestForce=null;gravityOwner=null;manualGravityActive=false;
 }
 function forceInScreen(x,y){
@@ -44,33 +44,34 @@ function forceInScreen(x,y){
 function motion(event){
   const a=event.accelerationIncludingGravity;
   if($('tiltSource').value==='orientation')return;
-  if(!a||!Number.isFinite(a.x)||!Number.isFinite(a.y)||!Number.isFinite(a.z)||Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z)<.01)return;
+  if(!a||!Number.isFinite(a.x)||!Number.isFinite(a.y))return;
   lastMotion={x:-a.x,y:a.y};motionAt=Date.now();lastSampleAt=motionAt;sensorSource='gravity sensor';
   forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);
 }
 function orientation(event){
-  if(!Number.isFinite(event.beta)||!Number.isFinite(event.gamma))return;
+  if(!Number.isFinite(event.beta)&&!Number.isFinite(event.gamma))return;
+  event={beta:Number.isFinite(event.beta)?event.beta:0,gamma:Number.isFinite(event.gamma)?event.gamma:0};
   lastTilt={beta:event.beta,gamma:event.gamma};
   if($('tiltSource').value==='gravity'||($('tiltSource').value!=='orientation'&&lastMotion&&Date.now()-motionAt<1500))return;
   lastSampleAt=Date.now();sensorSource='orientation fallback';
   forceInScreen(Math.sin((event.gamma-tiltZero.gamma)*Math.PI/180)*100,Math.sin((event.beta-tiltZero.beta)*Math.PI/180)*100);
 }
 async function requestPhoneSensors(){
-  if(!window.isSecureContext)throw new Error('Tilt needs the SECURE PHONE https:// link. Start the bridge with --tunnel; the manual gravity sliders work here.');
-  const types=[typeof DeviceMotionEvent!=='undefined'?DeviceMotionEvent:null,typeof DeviceOrientationEvent!=='undefined'?DeviceOrientationEvent:null].filter(Boolean);
-  if(!types.length)throw new Error('This browser has no motion sensor API. Use Safari on the iPhone, or the manual gravity sliders.');
-  // Invoke both permission requests during the original tap, before any network await.
-  const requests=[];for(const type of types)if(typeof type.requestPermission==='function'){try{requests.push(type.requestPermission());}catch(e){requests.push(Promise.reject(e));}}
-  const results=await Promise.allSettled(requests);
-  if(requests.length&&!results.some(r=>r.status==='fulfilled'&&r.value==='granted'))throw new Error('Motion permission was denied. Allow Motion & Orientation for this site in Safari, then tap Enable tilt again.');
+  const source=$('tiltSource').value;
+  await capSensors.request(source==='gravity'?'motion':source==='orientation'?'orientation':'both');
 }
 async function startPhoneSensors(){
   stopTilt();
   const claim=await api('/api/tilt/claim',{client:visitor,kind:'sensor'});gravityOwner=claim.owner;
   lastGravityAck=null;lastTilt=null;lastMotion=null;lastSampleAt=0;motionAt=0;tiltEnabled=true;
-  window.addEventListener('devicemotion',motion);window.addEventListener('deviceorientation',orientation);
+  let motionSeen=-1,orientationSeen=-1;
+  sensorUnsubscribe=capSensors.subscribe(sample=>{
+    if(!tiltEnabled)return;
+    if(sample.motion.events!==motionSeen){motionSeen=sample.motion.events;if(motionSeen)motion({accelerationIncludingGravity:sample.motion.gravity});}
+    if(sample.orientation.events!==orientationSeen){orientationSeen=sample.orientation.events;if(orientationSeen)orientation(sample.orientation);}
+  });
   tiltMessage('Motion permission allowed. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
-  sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. Open the SECURE PHONE link in Safari and check Motion & Orientation permission, or use the sliders.');},5000);
+  sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. Open Raw phone sensors below: event counts distinguish missing browser data from cap control. Use Test phone sensors or the standalone sensor test.');},5000);
 }
 async function flushGravity(){
   if(gravitySending||busy||!reachable||!gravityOwner||!['SAND','PARTICLES'].includes(state.mode)||!gravityWanted)return;
@@ -228,3 +229,16 @@ async function sendTaps(){
 setInterval(pollTug,500);setInterval(sendTaps,160);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){stopCameraLocal();plasmaTouches.clear();queuePlasma();if(tiltEnabled){stopTilt();tiltMessage('Tilt paused while the page is hidden. Tap Enable tilt to resume.');}}});
 previewPlasma();renderEffects();
+
+let rawReportAt=0;
+function renderRawSensors(force=false){
+  if(!force&&Date.now()-rawReportAt<150)return;rawReportAt=Date.now();
+  const sample=capSensors.snapshot();
+  $('rawSensorReport').textContent=JSON.stringify(sample,null,2);
+  $('rawSensorSummary').textContent='Motion events: '+sample.motion.events+' · Orientation events: '+sample.orientation.events+' · permission: motion '+sample.permission.motion+', orientation '+sample.permission.orientation;
+}
+capSensors.subscribe(()=>renderRawSensors());
+$('testSensors').onclick=async()=>{capSensors.reset();try{await capSensors.request('both');$('rawSensorSummary').textContent='Permission recorded. Tip the phone; raw counters should increase.';}catch(e){$('rawSensorSummary').textContent=e.message;}renderRawSensors(true);};
+$('copyRawSensors').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(capSensors.snapshot(),null,2));$('rawSensorSummary').textContent='Sensor report copied; no pairing key is included.';}catch(_){$('rawSensorSummary').textContent='Select and copy the raw report below.';}};
+$('standaloneSensors').href='/sensor-test'+location.hash;
+renderRawSensors(true);setInterval(()=>renderRawSensors(true),500);

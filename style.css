@@ -9,3 +9,5 @@
 .video-filters{border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}.video-filters>select{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:16px}.video-filters .live-label{display:flex;gap:8px;align-items:center}#animateDrawing{width:100%;margin:8px 0}
 
 #tiltSource{width:100%;background:var(--panel);color:var(--text);padding:10px;border:1px solid var(--line);border-radius:8px;font-size:16px;margin-bottom:10px}
+
+.sensor-report{white-space:pre-wrap;overflow-wrap:anywhere;background:#0a1210;border:1px solid var(--line);border-radius:8px;padding:12px;font:11px/1.5 monospace;max-height:320px;overflow:auto}a{color:var(--green)}
