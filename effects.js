@@ -36,7 +36,13 @@ function stopTilt(){
   if(sensorTimer)clearTimeout(sensorTimer);sensorTimer=null;gravityWanted=null;latestForce=null;gravityOwner=null;manualGravityActive=false;
 }
 function forceInScreen(x,y){
-  const angle=((screen.orientation&&screen.orientation.angle)||window.orientation||0)*Math.PI/180;
+  // Zero is a valid portrait angle. Never coerce the legacy window property:
+  // a global handler named orientation previously replaced it with a function.
+  const modernAngle=typeof screen!=='undefined'?screen.orientation?.angle:undefined;
+  const legacyAngle=window.orientation;
+  const degrees=Number.isFinite(modernAngle)?modernAngle:Number.isFinite(legacyAngle)?legacyAngle:0;
+  const angle=degrees*Math.PI/180;
+  if(!Number.isFinite(x)||!Number.isFinite(y))return;
   const flip=$('invertTilt').checked?-1:1;
   latestForce={x:bounded((x*Math.cos(angle)+y*Math.sin(angle))*flip),y:bounded((-x*Math.sin(angle)+y*Math.cos(angle))*flip)};
   gravityWanted={...latestForce};tiltDiagnostics();
@@ -48,7 +54,7 @@ function motion(event){
   lastMotion={x:-a.x,y:a.y};motionAt=Date.now();lastSampleAt=motionAt;sensorSource='gravity sensor';
   forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);
 }
-function orientation(event){
+function handlePhoneOrientation(event){
   if(!Number.isFinite(event.beta)&&!Number.isFinite(event.gamma))return;
   event={beta:Number.isFinite(event.beta)?event.beta:0,gamma:Number.isFinite(event.gamma)?event.gamma:0};
   lastTilt={beta:event.beta,gamma:event.gamma};
@@ -68,7 +74,7 @@ async function startPhoneSensors(){
   sensorUnsubscribe=capSensors.subscribe(sample=>{
     if(!tiltEnabled)return;
     if(sample.motion.events!==motionSeen){motionSeen=sample.motion.events;if(motionSeen)motion({accelerationIncludingGravity:sample.motion.gravity});}
-    if(sample.orientation.events!==orientationSeen){orientationSeen=sample.orientation.events;if(orientationSeen)orientation(sample.orientation);}
+    if(sample.orientation.events!==orientationSeen){orientationSeen=sample.orientation.events;if(orientationSeen)handlePhoneOrientation(sample.orientation);}
   });
   tiltMessage(lastSampleAt?'Phone tilt connected. Sending gravity to the cap…':'Phone tilt connected. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
   await flushGravity();
@@ -105,9 +111,9 @@ $('animateDrawing').onclick=async()=>{
 $('tiltSource').onchange=async()=>{if(tiltEnabled){try{await requestPhoneSensors();await startPhoneSensors();}catch(e){stopTilt();tiltMessage(e.message);}}else tiltMessage('Tilt source selected. Tap Enable tilt / take control to apply it.');};
 $('calibrateTilt').onclick=()=>{
   if(lastTilt)tiltZero={...lastTilt};if(lastMotion)motionZero={...lastMotion};
-  if(lastMotion&&Date.now()-motionAt<1500)forceInScreen(0,0);else if(lastTilt)orientation(lastTilt);
+  if(lastMotion&&Date.now()-motionAt<1500)forceInScreen(0,0);else if(lastTilt)handlePhoneOrientation(lastTilt);
 };
-$('invertTilt').onchange=()=>{if(lastMotion&&Date.now()-motionAt<1500)forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);else if(lastTilt)orientation(lastTilt);};
+$('invertTilt').onchange=()=>{if(lastMotion&&Date.now()-motionAt<1500)forceInScreen((lastMotion.x-motionZero.x)*100/9.81,(lastMotion.y-motionZero.y)*100/9.81);else if(lastTilt)handlePhoneOrientation(lastTilt);};
 async function manualGravity(){
   if(!['SAND','PARTICLES'].includes(state.mode)||gravityClaiming)return;
   if(!manualGravityActive||!gravityOwner){
