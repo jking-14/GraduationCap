@@ -1,6 +1,6 @@
 # Graduation Cap · Phone Controller
 
-A local Python-to-USB bridge for Jason’s 24×24 Arduino Due cap. It serves a phone interface for 25 automatic animations, touch drawing, pond ripples, five playable games, tilt-controlled sand, a multi-touch plasma globe, camera rasterization and shared two-player tug of war.
+A local Python-to-USB bridge for Jason’s 24×24 Arduino Due cap. It serves a phone interface for 25 automatic animations, touch drawing, pond ripples, five playable games, tilt-controlled sand, a multi-touch plasma globe, camera rasterization and a tilt-controlled ball labyrinth.
 
 **Phone → bridge on the computer → USB → Due.** Keep the computer awake and the bridge running.
 
@@ -74,9 +74,9 @@ Platformer, Underwater and the drawing canvas define the reference: x=0 is refer
 
 Click Start / reset sand. The Due simulates 140 grains with collisions and piling against the matrix edges. Click Enable tilt on the HTTPS phone page and allow motion access. Tilt changes the gravity direction; Calibrate level sets your current angle as neutral. Invert tilt flips both axes if your phone/viewing position needs it. Portrait and landscape orientation are accounted for.
 
-Manual gravity sliders work without sensor permission. Only the page that explicitly enables tilt or moves a gravity slider owns gravity control. Other open pages are observers and do not send a default force. Enabling tilt or moving a slider on another page transfers control; the previous owner stops sending when its token is rejected. If the phone stops sending gravity for two seconds, the grains settle toward screen-down. Reset sand restarts the grains. Tilt now prefers the iPhone’s `devicemotion` gravity readings and falls back to `deviceorientation` when needed. Both permission requests are initiated during your Enable tilt tap, before any network request. Open the HTTPS link directly in Safari, allow Motion & Orientation, then tip the phone. Flat, neutral input can produce zero in-plane gravity; calibrate only when you want the current holding angle to be neutral.
+Manual gravity sliders work without sensor permission. Only the page that explicitly enables tilt or moves a gravity slider owns gravity control. Other open pages are observers and do not send a default force. Enabling tilt or moving a slider on another page transfers control; the previous owner stops sending when its token is rejected. If the phone stops sending gravity for two seconds, the grains settle toward screen-down. Reset sand restarts the grains. Tilt defaults to the iPhone’s beta/gamma orientation readings; alternate sources remain available. Both permission requests are initiated during your Enable tilt tap, before any network request. Open the HTTPS link directly in Safari, allow Motion & Orientation, then tip the phone. Flat, neutral input can produce zero in-plane gravity; calibrate only when you want the current holding angle to be neutral.
 
-The **Sensors / cap gravity** line distinguishes real sensor readings from permission alone and shows the last acknowledged gravity vector. If permission is allowed but no reading arrives for five seconds, the page says so. A successful vector acknowledgment verifies the phone → bridge → Due path. The Due also reports its actual applied vector, shown separately in the indicator. If Auto receives unhelpful readings on your phone, select Gravity sensor or Orientation angles using Tilt source. Use Invert tilt if your viewing orientation needs both axes reversed. Manual slider directions are refreshed continuously rather than expiring after two seconds. No physical sensor is added to the cap.
+Use **Invert tilt** if your viewing orientation needs both axes reversed. Manual slider directions refresh continuously rather than expiring after two seconds. The visitor page shows brief action/status messages instead of raw orientation, gravity, and permission diagnostics.
 
 ## Plasma globe
 
@@ -92,16 +92,15 @@ The raster preview includes the active filters. Choose **Natural**, **Low light*
 
 Stop camera releases the camera and turns that stream off. Selecting another cap mode or hiding the page also stops the local camera. The bridge turns stale VIDEO mode off after six seconds without frames. No microphone is requested and no video is recorded.
 
-## Two-player tug of war
+## Tilt labyrinth
 
-1. Two visitors open the **same full Phone link** in separate phones/browsers.
-2. Click Open tug of war. One visitor joins red; the other joins blue. Others can spectate.
-3. Either seated player clicks Start / rematch. A shared three-second countdown begins.
-4. Tap the large button rapidly. Gain a 40-tap advantage to win early, or lead when the 20-second round ends. Equal scores finish in a draw.
+Tap **Play labyrinth**, allow motion access, and tilt the phone to roll the white 2×2 ball through blue walls into the pulsing 3×3 green goal. The phone preview matches the cap. A green success flash and “Level complete” message mark a win; after 1.5 seconds a newly generated maze appears. Every maze is connected, and the goal is placed far along the route from the start. There are no lives or time limits.
 
-The bridge owns the clock, score and seats. One browser identity can occupy only one seat, occupied seats cannot be claimed by another visitor, and tap batches use monotonically increasing sequence IDs to reject replay. The server caps accepted input at roughly 12 taps/second per player with a small burst allowance. Both visitors poll the same game state; the cap displays its rope and winner’s color.
+Hold the phone comfortably when starting. **Set phone level** adjusts the neutral position. **Stop game** ends the session. Keep Safari visible while playing; hiding the page stops the game. The current screen orientation is respected. Tilt speed is damped and wall collisions prevent passing through walls.
 
-Leave seat frees your spot. A player who disappears for more than 15 seconds during a round forfeits; inactive seats expire after 30 seconds outside an active round. Changing the cap away from tug of war cancels an unfinished round. Sessions reset if the bridge restarts.
+The game runs its physics on the controlling phone and sends 24×24 RGB frames through the existing CAP/7 VIDEO transport, at approximately three frames per second depending on USB/network latency. It does not request or use the camera. Live camera and labyrinth share an exclusive stream; stop one before starting the other. Other pages can select animations, which ends the local maze session. A stale stream turns off after six seconds. Existing CAP/7 firmware works without another upload.
+
+For user testing, ask the participant to start the game and reach the green goal without coaching. Observe whether the ball/goal colors, tilt direction, level button, and success transition are understood.
 
 ## Touch pond and drawing
 
@@ -145,20 +144,21 @@ The connection section keeps Bridge link or pairing key, Update and Retry availa
 
 ## GitHub and development
 
-This folder can be uploaded as a repository. `.gitignore` excludes virtual environments and Python caches. Session pairing/player keys are generated at runtime; no fixed credentials are included. The computer still runs bridge.py after you move the source to GitHub.
+This folder can be uploaded as a repository. `.gitignore` excludes virtual environments and Python caches. Session pairing keys are generated at runtime; no fixed credentials are included. The computer still runs bridge.py after you move the source to GitHub.
 
-Useful files: `bridge.py` (HTTP/serial), `experiences.py` (shared game and tunnel), `web/` (no build step), `firmware/gradCap2026/gradCap2026.ino` (full sketch), and `tests/`.
+Useful files: `bridge.py` (HTTP/serial), `experiences.py` (HTTPS tunnel), `web/` (no build step), `firmware/gradCap2026/gradCap2026.ino` (full sketch), and `tests/`.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 node --check web/app.js
 node --check web/effects.js
 node tests/ui_recovery.cjs
+node tests/maze.cjs
 g++ -std=c++11 -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer -I tests tests/firmware_control.cpp -o /tmp/cap-firmware-test
 ASAN_OPTIONS=detect_leaks=0 /tmp/cap-firmware-test
 ```
 
-Checks use simulated USB and host FastLED/serial stand-ins. They cover bridge routing, seats/timing/replay, frame ownership, UI recovery and feature requests, drawing/coordinate bounds, grain conservation, plasma targets, and interruption of all playlist scenes. They do not verify physical USB/LED timing, an Arduino Due build/upload, actual Safari sensor/camera permission, or a real external HTTPS tunnel. Browser rendering is unverified because Chromium startup is blocked in this workspace.
+Checks use simulated USB and host FastLED/serial stand-ins. They cover bridge routing, maze reachability/collisions/level progression, frame ownership, UI recovery and feature requests, drawing/coordinate bounds, grain conservation, plasma targets, and interruption of all playlist scenes. They do not verify physical USB/LED timing, an Arduino Due build/upload, actual Safari sensor/camera permission, or a real external HTTPS tunnel. Browser rendering is unverified because Chromium startup is blocked in this workspace.
 
 ## Protocol CAP/7
 
@@ -172,9 +172,8 @@ ASCII, newline-terminated at 115200 baud. Request IDs are positive decimal numbe
 - MELT id converts the staged drawing to PARTICLES mode, preserving occupied pixels’ colors. HTTP `/api/draw/particles` stages the full drawing before MELT.
 - PLASM id; BOLTS id x,y;x,y (up to five points), or BOLTS id - to release all touches.
 - VIDEO id selects frame-driven video mode. HTTP owner checks apply to camera requests.
-- TUG id; ROPE id score,phase (-40..40; 0 waiting, 1 countdown, 2 playing, 3 red win, 4 blue win, 5 draw). The bridge computes the score and round state.
 
-Sand, plasma, video and tug are interactive modes, not extra automatic playlist entries. There remain 25 animations.
+Sand, plasma, video and labyrinth are interactive modes, not extra automatic playlist entries. There remain 25 animations.
 
 ### Gravity control ownership and diagnosis
 
@@ -183,21 +182,9 @@ Sand, plasma, video and tug are interactive modes, not extra automatic playlist 
 The firmware emits `GRAVITY x y` before each gravity acknowledgment and in particle-mode status. The bridge exposes `device_gravity` and controller kind in status, letting you distinguish permission granted, sensor samples arriving, commands acknowledged, and force actually applied. The sand simulation now weights both axes, so a small sideways force can move a pile even when downward force is larger.
 
 
-### iPhone raw sensor diagnosis
-
-This update changes the controller only; no new firmware upload is required if CAP/7 is already installed. Replace the bridge folder, restart the secure launcher, and open its new HTTPS Phone link directly in Safari.
-
-Open **Raw iPhone readings** and tap **Test phone sensors**. Motion and orientation event counts and raw values remain visible even without a connected cap. Permission being granted is shown separately from actual readings. The **standalone sensor test** link runs the same capture without the controller or serial connection; it also lets you request Motion only or Orientation only. If values never arrive, tap **Copy report** and send that report for diagnosis. It contains no pairing key.
-
-Sensor listeners attach before permission is requested and remain active across animation changes. Valid x/y gravity readings are accepted even if z is absent. Raw null readings are counted and shown rather than silently discarded. To move sand or drawn particles, start that mode and tap Enable tilt; the raw test alone does not take control of the cap.
-
-
 If the secure phone page reports an unrecognized address, close the old bridge window, restart `start-secure-windows.bat`, and use the newly printed complete SECURE PHONE link. Quick-tunnel links change after restarting. This version pins cloudflared's local Host header and accepts the registered HTTPS address with or without its default :443 port. Pairing keys remain required for commands.
 
 
 ### Sand tilt control
 
-Start / reset sand now requests phone access and enables tilt forwarding in one tap. The default source is Orientation angles, using beta/gamma directly. The separate raw sensor tests only inspect the phone and do not control the cap. If you move a manual slider, it takes over; tap Enable tilt / take control to return to phone input. The diagnostic line shows calculated x/y, the acknowledged command, and the Due's reported gravity. Source changes while tilt is active reconnect that source immediately.
-
-
-Tilt NaN fix: renamed the orientation event handler so it cannot overwrite the browser's legacy window.orientation angle. Screen rotation now accepts only finite numeric angles and preserves portrait angle zero. This fixes calculated NaN forces that the bridge correctly rejected as out of range. Controller update only; no firmware upload required.
+Start / reset sand requests phone access and enables tilt in one tap. The default source is Orientation angles, using beta/gamma directly. Moving a manual slider takes over; tap Enable tilt / take control to return to phone input. Sensor listeners attach before permission is requested and stay available across scene changes. The orientation handler preserves the browser screen-angle property.

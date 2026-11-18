@@ -6,7 +6,7 @@ import json
 import secrets
 import re
 import subprocess
-from experiences import TugGame, start_tunnel
+from experiences import start_tunnel
 import socket
 import threading
 import time
@@ -258,24 +258,14 @@ class BridgeServer(ThreadingHTTPServer):
     def __init__(self, address, bridge, token):
         self.bridge, self.token = bridge, token
         self.public_origin=None
-        self.tug=TugGame()
         self.stopping=threading.Event()
         self.allowed_hosts = local_addresses() | {"localhost", address[0]}
         super().__init__(address, Handler)
         threading.Thread(target=self._effects_tick,daemon=True).start()
 
     def _effects_tick(self):
-        last=None
         while not self.stopping.wait(.1):
             current=self.bridge.status()
-            if current["mode"]=="TUG" and current["connected"]:
-                state=self.tug.state();phase={"waiting":0,"countdown":1,"playing":2,"finished":3 if state["winner"]=="red" else 4 if state["winner"]=="blue" else 5}[state["phase"]]
-                value=f'{state["score"]},{phase}'
-                if value!=last:
-                    try:self.bridge.command("ROPE",value);last=value
-                    except (OSError,RuntimeError,TimeoutError):pass
-            else:
-                self.tug.pause();last=None
             if current["mode"]=="VIDEO" and self.bridge.video_owner and time.monotonic()-self.bridge.video_seen>6:
                 try:self.bridge.command("OFF")
                 except (OSError,RuntimeError,TimeoutError):pass
@@ -335,19 +325,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             self.send(403, {"error": "Address not recognized. Restart the secure launcher and open its latest complete SECURE PHONE link."}); return
         path = urllib.parse.urlsplit(self.path).path
-        if path == "/sensor-test":
-            self.send(200,(WEB / "sensor-test.html").read_bytes(),"text/html; charset=utf-8"); return
         if path == "/":
             self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8"); return
-        if path in {"/app.js", "/creative.js", "/pond.js", "/effects.js", "/sensors.js", "/sensor-test.js", "/style.css"}:
+        if path in {"/app.js", "/creative.js", "/pond.js", "/effects.js", "/sensors.js", "/maze.js", "/labyrinth.js", "/style.css"}:
             self.send(200, (WEB / path[1:]).read_bytes(), "text/javascript; charset=utf-8" if path.endswith("js") else "text/css; charset=utf-8"); return
         if not self.authenticated():
             self.send(401, {"error": "Pair this phone using the complete link printed by the bridge."}); return
         try:
             if path == "/api/status":
                 self.send(200, self.server.bridge.status())
-            elif path == "/api/tug":
-                self.send(200,self.server.tug.state(self.headers.get("X-Player-Key")))
             elif path == "/api/animations":
                 self.send(200, [{"id": i, "name": n} for i, n in enumerate(ANIMATIONS)])
             elif path == "/api/info":
@@ -433,18 +419,6 @@ class Handler(BaseHTTPRequestHandler):
                     bridge.video_seen=time.monotonic()
                     for row in range(24):bridge.command("ROW",f"{row},{pixels[row*144:(row+1)*144]}")
                     reply=bridge.command("SHOW");bridge.video_seen=time.monotonic()
-            elif path == "/api/tug/open":
-                reply=bridge.command("TUG") if bridge.status()["mode"]!="TUG" else "TUG"
-            elif path.startswith("/api/tug/"):
-                if bridge.status()["mode"]!="TUG":raise ValueError("Open tug of war first")
-                game=self.server.tug
-                if path=="/api/tug/join":
-                    token=game.join(data.get("side"),data.get("client"));self.send(200,{"player":token,"game":game.state(token)});return
-                if path=="/api/tug/start":game.start(data.get("player"))
-                elif path=="/api/tug/tap":game.tap(data.get("player"),data.get("seq"),data.get("count"))
-                elif path=="/api/tug/leave":game.leave(data.get("player"))
-                else:raise ValueError("Unknown tug action")
-                self.send(200,{"game":game.state(data.get("player"))});return
             elif path == "/api/ripple/start":
                 reply = bridge.command("TOUCH")
             elif path == "/api/ripple":

@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0e1816">
   <title>Graduation Cap · Controller</title>
-  <link rel="stylesheet" href="style.css?v=11">
-  <script src="sensors.js?v=11" defer></script>
-  <script src="app.js?v=11" defer></script>
+  <link rel="stylesheet" href="style.css?v=12">
+  <script src="sensors.js?v=12" defer></script>
+  <script src="app.js?v=12" defer></script>
 </head>
 <body>
 <main>
@@ -40,11 +40,6 @@
     <div class="setup-actions"><button id="calibrateTilt" class="secondary">Calibrate level</button><label class="live-label"><input id="invertTilt" type="checkbox"> Invert tilt</label></div>
     <details><summary>Manual gravity controls</summary><label for="gravityX">Left / right</label><input id="gravityX" class="paddle-slider" type="range" min="-100" max="100" value="0"><label for="gravityY">Up / down</label><input id="gravityY" class="paddle-slider" type="range" min="-100" max="100" value="80"></details>
     <label for="tiltSource">Tilt source</label><select id="tiltSource"><option value="auto">Auto (gravity + fallback)</option><option value="gravity">Gravity sensor</option><option value="orientation" selected>Orientation angles (recommended)</option></select>
-    <details id="rawSensorPanel" open><summary>Raw iPhone readings — independent of cap connection</summary>
-    <div class="setup-actions"><button id="testSensors" class="secondary">Test phone sensors</button><button id="copyRawSensors" class="secondary">Copy report</button></div>
-    <p><a id="standaloneSensors" href="/sensor-test">Open standalone sensor test ↗</a></p>
-    <p id="rawSensorSummary" class="hint" role="status">Waiting for phone sensor test.</p><pre id="rawSensorReport" class="sensor-report" aria-live="off"></pre></details>
-    <p id="tiltDiagnostics" class="hint" role="status">Sensors: not enabled · cap gravity: not confirmed</p>
     <p id="sandStatus" class="hint" role="status">Start sand enables phone tilt automatically. Manual sliders take over until you enable tilt again.</p>
   </section>
   <section aria-label="Multi touch plasma globe">
@@ -68,15 +63,12 @@
     </div>
     <p id="videoStatus" class="hint" role="status">Only the tiny RGB raster leaves your phone. No audio or video recording.</p>
   </section>
-  <section aria-label="Two player tug of war">
-    <div class="section-title"><h2>Tug of war</h2><span>TWO PHONES · ONE CAP</span></div>
-    <p class="section-note">Two visitors open the same page and choose different colors. Tap to pull; gain a 40-tap lead or lead after 20 seconds to win.</p>
-    <button id="openTug" class="primary" data-control disabled>Open tug of war</button>
-    <div class="game-buttons tug-seats"><button id="joinRed" disabled>Join red</button><button id="joinBlue" disabled>Join blue</button><button id="leaveTug" disabled>Leave seat</button></div>
-    <div class="tug-track" aria-label="Shared rope position"><span id="tugKnot"></span></div>
-    <p id="tugStatus" class="hint" role="status">Choose a player, or watch without joining.</p>
-    <div class="setup-actions"><button id="startTug" class="secondary" disabled>Start / rematch</button></div>
-    <button id="tapTug" class="tap-button" disabled>TAP TO PULL</button>
+  <section aria-label="Tilt labyrinth">
+    <div class="section-title"><h2>Tilt labyrinth</h2><span>FIND YOUR WAY</span></div>
+    <p class="section-note">Tilt your phone to roll the white ball into the pulsing green goal. Each finish unlocks a new maze.</p>
+    <canvas id="labyrinthCanvas" width="480" height="480" aria-label="Maze preview. White ball, blue walls, green goal." style="width:100%;max-width:480px;image-rendering:pixelated;border-radius:12px;background:#050909"></canvas>
+    <div class="setup-actions"><button id="startLabyrinth" class="primary" data-control disabled>Play labyrinth</button><button id="levelLabyrinth" class="secondary" disabled>Set phone level</button><button id="stopLabyrinth" class="secondary" disabled>Stop game</button></div>
+    <p id="labyrinthStatus" class="hint" role="status">Hold your phone comfortably, then tap Play. Keep this page open while playing.</p>
   </section>
   <section aria-label="Interactive pond ripples">
     <div class="section-title"><h2>Touch the pond</h2><span>RIPPLES UNDER YOUR FINGER</span></div>
@@ -122,8 +114,10 @@
   </section>
   <footer><button id="off" class="off-button" data-control disabled>Turn LEDs off</button><p>Made for a moment worth celebrating.</p></footer>
 </main>
-<script src="creative.js?v=11" defer></script>
-<script src="pond.js?v=11" defer></script>
-<script src="effects.js?v=11" defer></script>
+<script src="creative.js?v=12" defer></script>
+<script src="pond.js?v=12" defer></script>
+<script src="effects.js?v=12" defer></script>
+<script src="maze.js?v=12" defer></script>
+<script src="labyrinth.js?v=12" defer></script>
 </body>
 </html>

@@ -4,10 +4,9 @@ let tiltZero={beta:0,gamma:0},motionZero={x:0,y:0},latestForce=null,gravityWante
 const plasmaCanvas=$('plasmaCanvas'),plasmaCtx=plasmaCanvas.getContext('2d'),plasmaTouches=new Map();
 let plasmaWanted=null,plasmaSending=false;
 let cameraStream=null,cameraOwner=null,cameraStarting=false,cameraSession=0,cameraTimer=null;
-let tugState=null,tugPolling=false,tugTaps=0,tugSending=false,tugPlayer='',tugSeq=0,visitor='';
-try{visitor=localStorage.getItem('cap-visitor')||'';tugPlayer=sessionStorage.getItem('cap-tug-player')||'';tugSeq=Number(sessionStorage.getItem('cap-tug-seq')||0);}catch(_){}
+let visitor='';
+try{visitor=localStorage.getItem('cap-visitor')||'';}catch(_){}
 if(!/^[a-z0-9_-]{8,80}$/i.test(visitor)){visitor='v'+Math.random().toString(36).slice(2)+Date.now().toString(36);try{localStorage.setItem('cap-visitor',visitor);}catch(_){}}
-function savePlayer(){try{sessionStorage.setItem('cap-tug-player',tugPlayer);sessionStorage.setItem('cap-tug-seq',String(tugSeq));}catch(_){}}
 function renderEffects(){
   const connected=reachable&&state.connected&&!busy;
   $('enableTilt').disabled=!connected||!['SAND','PARTICLES'].includes(state.mode);$('calibrateTilt').disabled=!tiltEnabled;
@@ -16,21 +15,11 @@ function renderEffects(){
   if(state.mode!=='PLASMA'){plasmaTouches.clear();plasmaWanted=null;}
   if(cameraStream&&!cameraStarting&&(state.mode!=='VIDEO'||cameraSession!==revision))stopCameraLocal();
   $('stopVideo').disabled=!cameraStream;
-  const tug=connected&&state.mode==='TUG',you=tugState&&tugState.you;
-  $('joinRed').disabled=!tug||!!(tugState?.players.red&&you!=='red')||!!(you&&you!=='red');
-  $('joinBlue').disabled=!tug||!!(tugState?.players.blue&&you!=='blue')||!!(you&&you!=='blue');
-  $('leaveTug').disabled=!tug||!you;
-  $('startTug').disabled=!tug||!you||!tugState?.players.red||!tugState?.players.blue||['playing','countdown'].includes(tugState?.phase);
-  $('tapTug').disabled=!tug||!you||tugState?.phase!=='playing';
-  if(!tug)tugTaps=0;
+  if(typeof renderLabyrinth==='function')renderLabyrinth();
 }
 function bounded(n){return Math.max(-100,Math.min(100,Math.round(n)));}
 function tiltMessage(message){$('sandStatus').textContent=message;$('drawingTiltStatus').textContent=message;}
-function tiltDiagnostics(ack){
-  if(ack)lastGravityAck=ack;
-  const seen=lastSampleAt?Math.max(0,Math.round((Date.now()-lastSampleAt)/1000)):null;
-  $('tiltDiagnostics').textContent='Sensors: '+(tiltEnabled?(seen===null?'waiting for data':sensorSource+' · '+seen+'s ago'):'manual / disabled')+' · calculated: '+(latestForce?latestForce.x+', '+latestForce.y:'none')+' · cap gravity: '+(lastGravityAck||'waiting for confirmation')+' · Due: '+(state.device_gravity?state.device_gravity.x+', '+state.device_gravity.y:'not yet reported')+' · controller: '+(gravityOwner?'this page':state.gravity_source?'another page ('+state.gravity_source+')':'none');
-}
+function tiltDiagnostics(ack){if(ack)lastGravityAck=ack;}
 function stopTilt(){
   tiltEnabled=false;if(sensorUnsubscribe)sensorUnsubscribe();sensorUnsubscribe=null;
   if(sensorTimer)clearTimeout(sensorTimer);sensorTimer=null;gravityWanted=null;latestForce=null;gravityOwner=null;manualGravityActive=false;
@@ -78,12 +67,12 @@ async function startPhoneSensors(){
   });
   tiltMessage(lastSampleAt?'Phone tilt connected. Sending gravity to the cap…':'Phone tilt connected. Waiting for sensor readings…');tiltDiagnostics();renderEffects();
   await flushGravity();
-  sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. Open Raw phone sensors below: event counts distinguish missing browser data from cap control. Use Test phone sensors or the standalone sensor test.');},5000);
+  sensorTimer=setTimeout(()=>{if(tiltEnabled&&!lastSampleAt)tiltMessage('No sensor readings arrived. No phone movement detected. Tap Enable tilt to try again.');},5000);
 }
 async function flushGravity(){
   if(gravitySending||busy||!reachable||!gravityOwner||!['SAND','PARTICLES'].includes(state.mode)||!gravityWanted)return;
   gravitySending=true;const value=gravityWanted;gravityWanted=null;const session=revision;
-  try{const result=await requestSerial('/api/sand/gravity',{...value,owner:gravityOwner});if(result.device_gravity)state.device_gravity=result.device_gravity;if(session===revision){tiltDiagnostics(value.x+', '+value.y+' confirmed');tiltMessage(tiltEnabled?(lastSampleAt?'Tilt active — cap gravity confirmed. Tip the phone; Calibrate sets neutral.':'Manual gravity confirmed; still waiting for sensor readings.'):'Manual gravity confirmed.');}}
+  try{const result=await requestSerial('/api/sand/gravity',{...value,owner:gravityOwner});if(result.device_gravity)state.device_gravity=result.device_gravity;if(session===revision){tiltDiagnostics(value.x+', '+value.y+' confirmed');tiltMessage(tiltEnabled?(lastSampleAt?'Tilt is on. Tip your phone to move the particles.':'Manual gravity confirmed; still waiting for sensor readings.'):'Manual gravity confirmed.');}}
   catch(e){if(session===revision){stopTilt();tiltMessage(describeError(e));}}finally{gravitySending=false;}
 }
 $('startSand').onclick=async()=>{
@@ -220,40 +209,6 @@ $('startVideo').onclick=async()=>{
   }catch(e){stopCameraLocal();cameraStarting=false;$('videoStatus').textContent=e.message;renderEffects();}
 };
 $('stopVideo').onclick=async()=>{const owner=cameraOwner;stopCameraLocal();if(state.mode==='VIDEO')await action('/api/video/stop',{owner},'Camera stopped.');};
-async function pollTug(){
-  if(tugPolling||!reachable||!state.connected||state.mode!=='TUG')return;tugPolling=true;
-  try{
-    tugState=await api('/api/tug',undefined,tugPlayer?{'X-Player-Key':tugPlayer}:{});
-    if(tugPlayer&&!tugState.you){tugPlayer='';savePlayer();}
-    $('tugKnot').style.left=(50+tugState.score*1.1)+'%';
-    const phase=tugState.phase,red=tugState.players.red,blue=tugState.players.blue;
-    $('tugStatus').textContent=(tugState.you?'You are '+tugState.you+'. ':'Spectating. ')+(phase==='waiting'?(red&&blue?'Both players joined. Start the round.':'Waiting for '+(!red?'red':'blue')+' player.'):phase==='countdown'?'Starts in '+Math.ceil(tugState.remaining)+'…':phase==='playing'?Math.ceil(tugState.remaining)+' seconds · red '+tugState.taps.red+' taps / blue '+tugState.taps.blue+' taps':tugState.winner==='draw'?'Draw! Start a rematch.':tugState.winner.toUpperCase()+' wins!');
-    $('tapTug').textContent=tugState.you?'TAP FOR '+tugState.you.toUpperCase():'CHOOSE A PLAYER';renderEffects();
-  }catch(e){$('tugStatus').textContent=describeError(e);}finally{tugPolling=false;}
-}
-$('openTug').onclick=async()=>{await action('/api/tug/open',{},'Tug of war is open. Choose a player on each phone.');pollTug();};
-for(const side of ['Red','Blue'])$('join'+side).onclick=async()=>{try{const result=await api('/api/tug/join',{side:side.toLowerCase(),client:visitor});tugPlayer=result.player;tugState=result.game;savePlayer();pollTug();}catch(e){$('tugStatus').textContent=e.message;}};
-$('leaveTug').onclick=async()=>{try{await api('/api/tug/leave',{player:tugPlayer});tugPlayer='';savePlayer();pollTug();}catch(e){$('tugStatus').textContent=e.message;}};
-$('startTug').onclick=async()=>{try{await api('/api/tug/start',{player:tugPlayer});pollTug();}catch(e){$('tugStatus').textContent=e.message;}};
-$('tapTug').addEventListener('pointerdown',e=>{e.preventDefault();if(!$('tapTug').disabled)tugTaps=Math.min(20,tugTaps+1);});
-async function sendTaps(){
-  if(tugSending||!tugTaps||!tugPlayer||state.mode!=='TUG'||tugState?.phase!=='playing')return;
-  tugSending=true;const count=Math.min(10,tugTaps);tugTaps-=count;tugSeq=tugSeq%2147483646+1;savePlayer();
-  try{const response=await api('/api/tug/tap',{player:tugPlayer,seq:tugSeq,count});tugState=response.game;renderEffects();}catch(e){tugTaps=0;$('tugStatus').textContent=e.message;}finally{tugSending=false;}
-}
-setInterval(pollTug,500);setInterval(sendTaps,160);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){stopCameraLocal();plasmaTouches.clear();queuePlasma();if(tiltEnabled){stopTilt();tiltMessage('Tilt paused while the page is hidden. Tap Enable tilt to resume.');}}});
 previewPlasma();renderEffects();
 
-let rawReportAt=0;
-function renderRawSensors(force=false){
-  if(!force&&Date.now()-rawReportAt<150)return;rawReportAt=Date.now();
-  const sample=capSensors.snapshot();
-  $('rawSensorReport').textContent=JSON.stringify(sample,null,2);
-  $('rawSensorSummary').textContent='Motion events: '+sample.motion.events+' · Orientation events: '+sample.orientation.events+' · permission: motion '+sample.permission.motion+', orientation '+sample.permission.orientation;
-}
-capSensors.subscribe(()=>renderRawSensors());
-$('testSensors').onclick=async()=>{capSensors.reset();try{await capSensors.request('both');$('rawSensorSummary').textContent='Permission recorded. Tip the phone; raw counters should increase.';}catch(e){$('rawSensorSummary').textContent=e.message;}renderRawSensors(true);};
-$('copyRawSensors').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(capSensors.snapshot(),null,2));$('rawSensorSummary').textContent='Sensor report copied; no pairing key is included.';}catch(_){$('rawSensorSummary').textContent='Select and copy the raw report below.';}};
-$('standaloneSensors').href='/sensor-test'+location.hash;
-renderRawSensors(true);setInterval(()=>renderRawSensors(true),500);
