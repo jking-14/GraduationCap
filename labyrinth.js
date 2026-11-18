@@ -47,7 +47,8 @@ setInterval(()=>{
  if(labyrinth.won){if(now-labWonAt>1500){labyrinth=CapMaze.create(labyrinth.level+1);labForce={x:0,y:0};if(labAngles)labZero={...labAngles};$('labyrinthStatus').textContent='Level '+labyrinth.level+' · New maze! Find the green goal.';}}
  else if(CapMaze.step(labyrinth,now-labReadingAt<1500?labForce.x:0,now-labReadingAt<1500?labForce.y:0,dt)){labWonAt=now;$('labyrinthStatus').textContent='Level '+labyrinth.level+' complete! Next maze…';}
  if(!labHasReading)$('labyrinthStatus').textContent='Waiting for phone tilt. Keep Safari open and allow motion access.';
- if(now-labFrameAt>300)sendLabyrinth();
+ previewLabyrinth(CapMaze.pixels(labyrinth,now));
+ if(now-labFrameAt>100)sendLabyrinth();
 },40);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&labOwner)$('stopLabyrinth').onclick();});
 previewLabyrinth(CapMaze.pixels(CapMaze.create()));renderLabyrinth();

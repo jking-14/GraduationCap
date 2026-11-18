@@ -11,3 +11,5 @@
 #tiltSource{width:100%;background:var(--panel);color:var(--text);padding:10px;border:1px solid var(--line);border-radius:8px;font-size:16px;margin-bottom:10px}
 
 .sensor-report{white-space:pre-wrap;overflow-wrap:anywhere;background:#0a1210;border:1px solid var(--line);border-radius:8px;padding:12px;font:11px/1.5 monospace;max-height:320px;overflow:auto}a{color:var(--green)}
+
+.touch-joystick{position:relative;width:220px;height:220px;margin:20px auto;border-radius:50%;border:1px solid var(--line);background:radial-gradient(circle,#253e33,#101d19);touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden}.touch-joystick[aria-disabled="true"]{opacity:.35}.touch-joystick:focus-visible{outline:2px solid var(--green);outline-offset:4px}.joystick-cross:before,.joystick-cross:after{content:"";position:absolute;background:#52796355;left:15%;top:50%;width:70%;height:1px}.joystick-cross:after{transform:rotate(90deg)}#joystickKnob{position:absolute;left:50%;top:50%;width:76px;height:76px;border-radius:50%;transform:translate(-50%,-50%);background:#6eaa84;border:2px solid #a5dfb5;box-shadow:0 5px 14px #0007;pointer-events:none}

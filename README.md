@@ -94,11 +94,11 @@ Stop camera releases the camera and turns that stream off. Selecting another cap
 
 ## Tilt labyrinth
 
-Tap **Play labyrinth**, allow motion access, and tilt the phone to roll the white 2×2 ball through blue walls into the pulsing 3×3 green goal. The phone preview matches the cap. A green success flash and “Level complete” message mark a win; after 1.5 seconds a newly generated maze appears. Every maze is connected, and the goal is placed far along the route from the start. There are no lives or time limits.
+Tap **Play labyrinth**, allow motion access, and tilt the phone to roll the white single-pixel ball through blue walls into the pulsing 2×2 green goal. The phone preview matches the cap. A green success flash and “Level complete” message mark a win; after 1.5 seconds a newly generated maze appears. Every maze is connected, and the goal is placed far along the route from the start. There are no lives or time limits.
 
 Hold the phone comfortably when starting. **Set phone level** adjusts the neutral position. **Stop game** ends the session. Keep Safari visible while playing; hiding the page stops the game. The current screen orientation is respected. Tilt speed is damped and wall collisions prevent passing through walls.
 
-The game runs its physics on the controlling phone and sends 24×24 RGB frames through the existing CAP/7 VIDEO transport, at approximately three frames per second depending on USB/network latency. It does not request or use the camera. Live camera and labyrinth share an exclusive stream; stop one before starting the other. Other pages can select animations, which ends the local maze session. A stale stream turns off after six seconds. Existing CAP/7 firmware works without another upload.
+The game runs its physics on the controlling phone and sends 24×24 RGB frames through the existing CAP/7 VIDEO transport, with one frame in flight at a time; refresh rate depends on USB/network latency. It does not request or use the camera. Live camera and labyrinth share an exclusive stream; stop one before starting the other. Other pages can select animations, which ends the local maze session. A stale stream turns off after six seconds. Existing CAP/7 firmware works without another upload.
 
 For user testing, ask the participant to start the game and reach the green goal without coaching. Observe whether the ball/goal colors, tilt direction, level button, and success transition are understood.
 
@@ -188,3 +188,10 @@ If the secure phone page reports an unrecognized address, close the old bridge w
 ### Sand tilt control
 
 Start / reset sand requests phone access and enables tilt in one tap. The default source is Orientation angles, using beta/gamma directly. Moving a manual slider takes over; tap Enable tilt / take control to return to phone input. Sensor listeners attach before permission is requested and stay available across scene changes. The orientation handler preserves the browser screen-angle property.
+
+
+### Visitor flow and joystick
+
+Sections progress from connection, animation selection and playlists, to pond ripples, sand, drawing, plasma, retro games, labyrinth, and camera. The game joystick supports drag steering for Snake and horizontal paddle/ship placement for Pong, Breakout, and Space Invaders. Release or cancellation recenters the joystick; Snake retains its last direction. Arrow keys are also supported when the joystick is focused. Paddle sliders remain as an alternative, and Jump/Fire remain separate buttons.
+
+Labyrinth now generates an 8×8 cell maze with two-pixel passages and one-pixel internal walls across the 24×24 display. The display edges serve as the outer boundary at the final row and column. The ball occupies one LED. Increased acceleration and damping give faster starts and quicker reversals; collision substeps still prevent wall tunneling. The phone preview refreshes with physics while display frames are sent without a queue.
